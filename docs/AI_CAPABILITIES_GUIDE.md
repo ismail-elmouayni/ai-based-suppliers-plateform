@@ -76,7 +76,7 @@ vendor_scoring:
 - If you want to prioritise high-spend suppliers: increase `spend_weight`
 - The three weights do not need to add up to 1.0 — the system normalises them automatically
 
-After saving the file, trigger a new ML run (see section 6) to apply the changes.
+After saving the file, trigger a new ML run (see section 7) to apply the changes.
 
 ---
 
@@ -172,7 +172,7 @@ anomaly_detection:
 - **Increase** (e.g. to 0.10): More orders flagged — better for catch-all audits
 - **Decrease** (e.g. to 0.02): Only the most extreme outliers flagged — better for focused investigation
 
-After saving, trigger a new ML run (section 6) to apply the change.
+After saving, trigger a new ML run (section 7) to apply the change.
 
 ---
 
@@ -211,7 +211,525 @@ need any pre-defined rules or historical anomaly labels to get started.
 
 ---
 
-## 5. Interpreting the Dashboards
+## 5. The Theory Behind Each AI Module
+
+This section explains *how* and *why* each AI module works the way it does. You do not need
+any programming or data science background — we will use analogies, plain language, and
+diagrams throughout.
+
+---
+
+### 5.1 What is Machine Learning?
+
+**Machine Learning (ML)** is a branch of computer science where a program **learns patterns
+from data** instead of following hand-written rules.
+
+- **Traditional software** says: *"if the spend exceeds €50,000, flag it."*
+- **A machine learning model** says: *"show me 1,000 past orders, and I will figure out
+  what 'unusual' looks like on my own."*
+
+The advantage is that ML adapts to your specific data. It does not need a human expert to
+decide every threshold and rule in advance — it discovers the thresholds that make sense
+for your supply base.
+
+The platform uses four AI/ML techniques, each solving a different problem:
+
+| Module | Problem solved | Technique family |
+|--------|---------------|-----------------|
+| Entity Resolution | Same supplier, different spellings | Fuzzy string matching + graph clustering |
+| Vendor Scoring | Who is performing best? | Weighted composite scoring with normalisation |
+| Consolidation | Which suppliers can be merged? | Unsupervised clustering (K-Means / DBSCAN) |
+| Anomaly Detection | Which orders look suspicious? | Statistical outlier detection (Isolation Forest + Z-scores) |
+
+Here is the high-level flow of how all four modules connect:
+
+```mermaid
+flowchart TD
+    A["📊 Raw Procurement Data\n1 734 purchase orders"] --> B
+
+    subgraph B["🔤 Step 1 · Entity Resolution"]
+        direction LR
+        b1["Normalise names"] --> b2["Fuzzy-match pairs"] --> b3["Group & pick canonical name"]
+    end
+
+    B --> C
+    B --> D
+    B --> E
+
+    subgraph C["🏆 Step 2 · Vendor Scoring"]
+        direction LR
+        c1["Compute signals"] --> c2["Normalise 0→1"] --> c3["Weighted blend → score"]
+    end
+
+    subgraph D["🔀 Step 3 · Consolidation Clustering"]
+        direction LR
+        d1["Build spend matrix"] --> d2["Normalise columns"] --> d3["K-Means / DBSCAN"]
+    end
+
+    subgraph E["🚨 Step 4 · Anomaly Detection"]
+        direction LR
+        e1["Feature engineering"] --> e2["Isolation Forest"] --> e3["Z-score severity"]
+    end
+
+    C --> F["Vendor Scorecard\nGREEN / AMBER / RED"]
+    D --> G["Consolidation Report\nClusters + savings estimate"]
+    E --> H["Anomaly Report\nHIGH / MEDIUM / LOW flags"]
+```
+
+---
+
+### 5.2 Entity Resolution — Recognising the Same Supplier
+
+#### The Problem
+
+Procurement systems often record the same company under slightly different names depending
+on who typed the purchase order:
+
+- `TELEPERFORMANCE SE`
+- `TELEPERFORMANCE GROUP INC`
+- `TP GROUP INC`
+- `Teleperformance, S.A.`
+
+Without fixing this, the AI would treat these as four separate suppliers and produce four
+small, misleading scores instead of one accurate picture of Teleperformance's performance.
+
+#### The Solution: Fuzzy String Matching
+
+The module does not require an exact match. Instead, it measures **how similar** two names
+are using a score from 0 to 100, where 100 = identical and 0 = completely different.
+
+Think of it like predictive text on your phone: it suggests "Teleperformance" even when you
+typed "Teleperforemance" — it found the closest match despite the typo.
+
+#### How it Works Step by Step
+
+**Step 1 — Normalise**
+Convert everything to uppercase, strip legal suffixes (SA, INC, LTD, GMBH, SARL, CORP…),
+and collapse extra spaces. This removes noise before comparing.
+
+**Step 2 — Compare**
+Calculate a similarity score between every pair of supplier names using a technique called
+*WRatio* — a combination of several string-distance measures that handles abbreviations,
+word reordering, and partial matches well.
+
+**Step 3 — Group**
+Any two names scoring ≥ 85 out of 100 are treated as the same company. Grouping is
+transitive: if A matches B and B matches C, then A, B, and C are all in the same group —
+even if A and C were never directly compared. This is done with a data structure called
+**Union-Find** (also known as Disjoint Set Union).
+
+**Step 4 — Pick a canonical name**
+Within each group, the name that appears most often across all purchase orders becomes the
+"official" canonical name going forward.
+
+```mermaid
+flowchart LR
+    A["Raw names in source data\n━━━━━━━━━━━━━━━━\nTP GROUP INC\nTELEPERFORMANCE SE\nTELEPERFORMANCE GROUP INC\nTeleperformance, S.A."]
+    --> B["Step 1 · Normalise\n━━━━━━━━━━━━━━━━\nTP GROUP\nTELEPERFORMANCE\nTELEPERFORMANCE GROUP\nTELEPERFORMANCE"]
+
+    B --> C["Step 2 · WRatio scores\n━━━━━━━━━━━━━━━━\nTP GROUP ↔ TELEPERFORMANCE = 72\nTELEPERFORMANCE ↔ TELEPERFORMANCE GROUP = 95\n…"]
+
+    C --> D["Step 3 · Group (threshold 85)\n━━━━━━━━━━━━━━━━\nAll four → same cluster"]
+
+    D --> E["Step 4 · Canonical name\n━━━━━━━━━━━━━━━━\n→ TELEPERFORMANCE SE\n(appears most often in POs)"]
+```
+
+#### Why 85 as the Threshold?
+
+At 85, minor typos and common abbreviations are caught while clearly different companies
+are not accidentally merged. The threshold is configurable in `model_config.yml`:
+
+- **Raise to 95**: Stricter — only near-identical names merge (safer but may miss variants)
+- **Lower to 70**: More aggressive — catches distant abbreviations (more merges, higher risk
+  of false positives)
+
+---
+
+### 5.3 Vendor Scoring — How the Grade is Calculated
+
+#### The Concept: Weighted Composite Scoring
+
+Vendor scoring is a transparent, explainable formula — not a "black box". Think of it like
+rating a job candidate across three criteria (Technical skill, Communication, Experience)
+where each criterion has a different importance weight.
+
+#### Step 1 — Collect the Raw Signals
+
+For each **vendor + category** pair (e.g. *TELEPERFORMANCE SE in IT Software*), three
+numbers are calculated:
+
+| Signal | How it is calculated |
+|--------|---------------------|
+| **Savings performance** | Average saving % across all purchase orders for this vendor and category |
+| **Spend volume** | Total € spend across all purchase orders for this vendor and category |
+| **Category focus** | This vendor's spend in this category ÷ their total spend across all categories |
+
+Category focus rewards specialists: a vendor doing 90% of their business in IT Software
+will score higher on this signal than a generalist vendor spread across 10 categories.
+
+#### Step 2 — Normalise (Put Everyone on the Same Scale)
+
+Raw numbers cannot be compared directly. A vendor with €10 million in spend and a vendor
+with €50,000 in spend cannot both get a "10 out of 10" score on volume just because the
+numbers happen to be similar on paper.
+
+The system uses **min-max normalisation**:
+
+> **Normalised score = (your value − lowest value in the dataset) ÷ (highest value − lowest value)**
+
+After normalisation, the worst performer on each signal gets **0** and the best gets **1**.
+Everyone else falls between 0 and 1 — making comparison fair regardless of the original units.
+
+```mermaid
+graph LR
+    A["Raw saving %: 15%\nDataset range: 2% → 22%"]
+    -->|"(15 − 2) / (22 − 2) = 0.65"| B["Normalised saving = 0.65\n(65th percentile of all vendors)"]
+
+    C["Raw spend: €200,000\nDataset range: €1,000 → €5,000,000"]
+    -->|"(200k − 1k) / (5M − 1k) ≈ 0.04"| D["Normalised spend = 0.04\n(4th percentile of all vendors)"]
+```
+
+#### Step 3 — Blend with Weights
+
+The three normalised scores are multiplied by their weights and summed:
+
+> **Composite = (0.50 × Savings) + (0.30 × Spend) + (0.20 × Category focus)**
+
+The result is then multiplied by 100 to give a 0–100 score.
+
+```mermaid
+graph TD
+    A["Savings norm = 0.65\n× weight 0.50\n= 0.325"] --> D
+    B["Spend norm = 0.04\n× weight 0.30\n= 0.012"] --> D
+    C["Category focus norm = 0.80\n× weight 0.20\n= 0.160"] --> D
+    D["Sum = 0.497"] --> E["× 100 = 49.7\n→ 🟡 AMBER"]
+```
+
+#### Why Scores are Relative, Not Absolute
+
+Because normalisation divides by the dataset's own range, a "10% saving" means something
+very different depending on your supply base:
+
+- If all your vendors save 8–12%: 10% would score around 0.5 (median)
+- If your vendors range from 1–20%: 10% would also score around 0.5
+
+This means **scores reflect how a vendor performs compared to your own supply base**, not
+against an external benchmark. Scores will naturally shift slightly between pipeline runs
+as new suppliers and orders are added.
+
+---
+
+### 5.4 Consolidation Clustering — Finding Natural Supplier Groups
+
+#### The Concept: Unsupervised Learning
+
+Unlike vendor scoring (which follows a fixed formula), consolidation uses **unsupervised
+machine learning**. The key word is *unsupervised*: the algorithm finds patterns in the
+data without being told what to look for. Nobody tells it "group IT suppliers together" —
+it discovers natural groupings purely from spend behaviour.
+
+Contrast this with *supervised* learning (not used here), where the algorithm is trained
+on labelled examples: "here are 500 past consolidation decisions — learn from them."
+Unsupervised learning works without any historical decisions to learn from.
+
+#### Step 1 — Build a Spend Fingerprint
+
+The system creates a matrix (a table of numbers) where each row represents one supplier
+and each column represents one category. Each cell contains the total spend for that
+supplier in that category (0 if they do not operate in that category):
+
+| Supplier | IT Software | Facilities | Consulting | Legal |
+|----------|------------|-----------|-----------|-------|
+| Vendor A | 200,000 | 0 | 50,000 | 0 |
+| Vendor B | 180,000 | 0 | 70,000 | 0 |
+| Vendor C | 0 | 300,000 | 0 | 0 |
+| Vendor D | 0 | 280,000 | 0 | 0 |
+
+Vendors A and B have similar fingerprints (IT Software + Consulting); C and D look alike
+(Facilities only). The algorithm will find these two groups automatically.
+
+#### Step 2 — Standardise the Fingerprint
+
+A category with €10 million in spend would dominate the maths over one with €50,000.
+**StandardScaler** normalisation centres each category column around 0 and gives each
+column equal weight — so no single category drowns out the others.
+
+#### Step 3 — K-Means Clustering
+
+K-Means is one of the most widely used clustering algorithms. Here is the intuition:
+
+1. Randomly place **K** "centre points" (called *centroids*) somewhere in the data
+2. Assign each supplier to the nearest centroid
+3. Move each centroid to the average position of its assigned suppliers
+4. Repeat steps 2–3 until the assignments stop changing
+
+```mermaid
+flowchart TD
+    A["All suppliers scattered\nin spend-pattern space"]
+    --> B["Place K centroids\nat random positions"]
+    B --> C["Assign each supplier\nto the nearest centroid"]
+    C --> D["Move each centroid\nto the average of its group"]
+    D --> E{Did any assignment\nchange?}
+    E -->|Yes| C
+    E -->|No| F["✅ Final stable clusters"]
+```
+
+**Choosing K — The Elbow Method**
+
+K-Means requires knowing K in advance (how many clusters to form). The platform uses the
+**elbow method** to find K automatically:
+
+1. Run K-Means for K = 2, 3, 4 … up to 10
+2. At each K, measure *inertia* — the total distance between each supplier and its cluster
+   centre (lower = tighter clusters)
+3. Plot inertia vs. K. It always decreases as K increases, but at some point the
+   improvement becomes marginal
+4. Pick the K where the improvement drops below 15% — this is the "elbow" point
+
+The name comes from the shape of the curve: it bends sharply at the optimal K and then
+flattens, like an arm with an elbow.
+
+#### DBSCAN — An Alternative for Complex Data
+
+For datasets where clusters have irregular shapes or many suppliers do not fit neatly into
+any group, the platform can switch to **DBSCAN** (Density-Based Spatial Clustering of
+Applications with Noise):
+
+```mermaid
+graph LR
+    subgraph KMeans["K-Means"]
+        k1["Requires K upfront"]
+        k2["Spherical clusters"]
+        k3["Every supplier assigned"]
+        k4["Fast on large data"]
+    end
+
+    subgraph DBSCAN_box["DBSCAN"]
+        d1["Discovers K automatically"]
+        d2["Any cluster shape"]
+        d3["Isolated suppliers → noise"]
+        d4["More flexible, slower"]
+    end
+```
+
+DBSCAN works by looking at **density**: a cluster is a region where suppliers are packed
+closely together in spend-pattern space. Isolated suppliers that are far from any dense
+region are labelled as *noise* and excluded from consolidation reports — which is useful
+when you have a few truly unique vendors with no peers.
+
+#### Step 4 — Interpret Each Cluster
+
+Once clusters are formed, the system characterises each one:
+
+- **Dominant category**: whichever category has the highest average spend in the cluster
+- **Estimated saving potential**: the gap between the best vendor's saving rate and the
+  cluster average — what you could gain by consolidating to the top performer
+- **Estimated saving amount**: saving potential × total cluster spend
+
+---
+
+### 5.5 Anomaly Detection — Spotting the Unusual
+
+#### The Concept: Learning What "Normal" Looks Like
+
+Traditional rule-based systems use fixed thresholds: "flag any PO over €50,000."
+The problem is context: a €50,000 order may be perfectly normal for one supplier and
+wildly unusual for another. **Isolation Forest** learns the normal pattern from your
+actual data and flags deviations relative to that baseline — no manual thresholds needed.
+
+#### The Features Used
+
+For each purchase order, four numbers are calculated and fed to the model:
+
+| Feature | What it captures |
+|---------|-----------------|
+| **SpendGap** | Final spend minus original agreed price (positive = overrun, negative = underspend) |
+| **SpendGapPct** | SpendGap expressed as a % of the original price |
+| **Spend** | The final amount actually paid |
+| **Saving_Pct** | The saving rate recorded on this purchase order |
+
+Using four features together means the model can catch cases where no single number looks
+extreme, but the combination of values is unusual.
+
+#### How Isolation Forest Works
+
+The core idea is deceptively simple: **unusual data points are easier to isolate than
+normal ones**.
+
+Imagine a crowd of people standing in a field. To isolate a person standing in the middle
+of the crowd, you need to draw many dividing lines. To isolate someone standing far from
+the group at the edge of the field, you only need one or two lines.
+
+Isolation Forest does exactly this with data:
+
+1. Randomly select one of the four features (e.g. SpendGap)
+2. Randomly select a split value within that feature's range
+3. Divide the data: records above and below the split go into separate branches
+4. Repeat until every record is isolated in its own branch
+5. Count how many splits were needed to isolate each record
+
+**Anomalies are isolated in very few splits. Normal records need many more splits to separate.**
+
+```mermaid
+flowchart TD
+    A["All purchase orders"] --> B["Random split:\nSpendGap ≤ €500?"]
+    B -->|"Yes — most normal orders"| C["Large group remains\n→ needs many more splits\n→ Normal order"]
+    B -->|"No — few orders"| D["Small group\n→ random split again"]
+    D --> E["Random split:\nSpendGapPct ≤ 80%?"]
+    E -->|"No — very few orders"| F["Isolated in 3 splits\n→ 🚨 Anomaly Score: HIGH"]
+    E -->|"Yes"| G["Isolated in 4 splits\n→ Borderline"]
+```
+
+The system builds **100 such trees** — each using different random splits and different
+random subsets of the data. The final anomaly score is the average isolation depth across
+all 100 trees. Using many trees together (called an **ensemble**) makes the result much
+more robust than relying on any single tree.
+
+The `contamination_factor` (default 0.05) tells the model to flag approximately the top 5%
+most anomalous orders. The remaining 95% are considered normal.
+
+#### How Severity is Assigned — Z-Scores
+
+A high anomaly score tells you *that* an order is unusual. The severity (HIGH / MEDIUM / LOW)
+tells you *how* unusual it is in context, using **Z-scores**:
+
+> **Z-score = (this order's SpendGap − average SpendGap for this supplier + category) ÷ standard deviation**
+
+In plain English: *"How many times the typical variation does this overrun represent?"*
+
+If the average SpendGap for Vendor A in IT Software is €1,000 with a standard deviation of
+€500, and one order has a SpendGap of €2,500:
+
+> Z-score = (2,500 − 1,000) / 500 = **3.0** → 🔴 HIGH
+
+| Z-score | Plain English | Severity |
+|---------|--------------|---------|
+| ≥ 3.0 | More than 3× the normal variation — extremely rare | 🔴 **HIGH** |
+| 2.0 – 3.0 | 2–3× normal variation — clearly notable | 🟡 **MEDIUM** |
+| < 2.0 | Within a more typical range | 🟢 **LOW** |
+
+A Z-score of 3 means that, assuming a normal distribution, you would expect to see this
+level of overrun by chance in fewer than **0.3% of orders**. It is not impossible — but
+it is worth investigating.
+
+```mermaid
+flowchart TD
+    A["IsolationForest flags\ntop 5% anomalous orders"]
+    --> B["Calculate Z-score\nfor SpendGap\nvs. same supplier + category mean"]
+    B --> C{Z ≥ 3.0?}
+    C -->|Yes| D["🔴 HIGH\nImmediate review"]
+    C -->|No| E{Z ≥ 2.0?}
+    E -->|Yes| F["🟡 MEDIUM\nSchedule review"]
+    E -->|No| G["🟢 LOW\nMonitor"]
+```
+
+#### Why Use Both Isolation Forest AND Z-Scores?
+
+They answer complementary questions and each has strengths the other lacks:
+
+| | Isolation Forest | Z-Score |
+|--|-----------------|---------|
+| **What it detects** | Orders unusual across multiple features simultaneously | How extreme the spend gap is for this specific supplier and category |
+| **Requires historical data?** | No — works on any dataset from the first run | Yes — needs enough orders to calculate a meaningful average |
+| **Strength** | Catches complex multi-dimensional outliers | Gives a human-readable, contextual explanation |
+| **Output** | Anomaly score 0–1 | Numerical deviation with direction and magnitude |
+
+Using both together gives you better detection accuracy **and** a plain-English reason
+string that your team can act on immediately.
+
+---
+
+### 5.6 The Full AI Pipeline — End to End
+
+The diagram below shows how all four modules connect, from raw data to final outputs:
+
+```mermaid
+flowchart TD
+    subgraph INPUT["📥 Input Data"]
+        A["procurement.ProcurementRecords\n━━━━━━━━━━━━━━━━━━━\nVendor · Category · PO_Number\nOriginal_Spend · Spend · Saving_Pct"]
+    end
+
+    subgraph ER["🔤 Step 1 · Entity Resolution"]
+        B1["Normalise: uppercase, strip legal suffixes"]
+        B2["WRatio fuzzy match all name pairs"]
+        B3["Union-Find grouping (threshold 85)"]
+        B4["Select canonical name (most frequent)"]
+        B1 --> B2 --> B3 --> B4
+    end
+
+    subgraph SCORING["🏆 Step 2 · Vendor Scoring"]
+        C1["Group by Vendor + Category\nCompute Saving%, Spend, Specialization"]
+        C2["Min-max normalise each signal 0 → 1"]
+        C3["Weighted blend: 50% + 30% + 20%"]
+        C4["Scale to 0–100 · assign GREEN/AMBER/RED"]
+        C1 --> C2 --> C3 --> C4
+    end
+
+    subgraph CLUSTER["🔀 Step 3 · Consolidation Clustering"]
+        D1["Build Vendor × Category spend matrix"]
+        D2["StandardScaler: zero-mean, unit variance"]
+        D3["K-Means with elbow method (or DBSCAN)"]
+        D4["Dominant category · estimate saving potential"]
+        D1 --> D2 --> D3 --> D4
+    end
+
+    subgraph ANOMALY["🚨 Step 4 · Anomaly Detection"]
+        E1["Features: SpendGap · SpendGapPct · Spend · Saving%"]
+        E2["Isolation Forest: 100 trees · top 5% flagged"]
+        E3["Z-score vs. supplier + category mean"]
+        E4["Severity: HIGH ≥ 3σ · MEDIUM ≥ 2σ · LOW < 2σ"]
+        E1 --> E2 --> E3 --> E4
+    end
+
+    subgraph OUTPUT["📊 Outputs stored in database"]
+        F1["ai_output.VendorScores\n→ Vendor Scorecard dashboard"]
+        F2["ai_output.ConsolidationClusters\n→ Consolidation Treemap dashboard"]
+        F3["ai_output.AnomalyFlags\n→ Anomaly Detection dashboard"]
+    end
+
+    INPUT --> ER
+    ER -->|"Canonical names attached"| SCORING
+    ER -->|"Canonical names attached"| CLUSTER
+    ER -->|"Canonical names attached"| ANOMALY
+    SCORING --> F1
+    CLUSTER --> F2
+    ANOMALY --> F3
+```
+
+---
+
+### 5.7 Key ML Concepts — Quick Reference Glossary
+
+| Concept | Plain-English Definition |
+|---------|------------------------|
+| **Machine Learning (ML)** | A program that learns patterns from data rather than following hand-written rules |
+| **Unsupervised learning** | ML where the algorithm finds patterns without labelled training examples — it has no "correct answers" to learn from |
+| **Supervised learning** | ML where the algorithm is trained on labelled examples (not used in this platform) |
+| **Normalisation** | Rescaling numbers from different ranges onto the same scale so they can be fairly compared |
+| **Min-max normalisation** | Rescaling so the lowest value = 0 and the highest = 1; used in vendor scoring |
+| **StandardScaler** | Normalisation that centres data around 0 with equal spread; used before clustering |
+| **Weighted composite score** | A single number combining multiple signals according to their configured importance weights |
+| **Clustering** | Automatically grouping similar items together without being told what groups should exist |
+| **K-Means** | A clustering algorithm that groups data into K clusters by minimising the distance from each point to its cluster centre |
+| **Centroid** | The "centre of gravity" of a cluster — the average position of all points in that group |
+| **Inertia (K-Means)** | A measure of cluster tightness — the sum of squared distances from each point to its centroid; lower = tighter |
+| **Elbow method** | Technique to choose K by plotting inertia vs. K and finding where improvement levels off |
+| **DBSCAN** | A density-based clustering algorithm that finds clusters of any shape and marks isolated points as noise |
+| **Isolation Forest** | An anomaly detection algorithm that isolates unusual records using random data splits; records needing fewer splits are more anomalous |
+| **Ensemble** | Combining many models (e.g. 100 isolation trees) and averaging their outputs for more robust predictions |
+| **Contamination factor** | The proportion of records the anomaly model expects to be anomalous; 0.05 = top 5% flagged |
+| **Z-score** | Measures how many standard deviations a value is from the mean; Z = 3 means the value is extremely unusual |
+| **Standard deviation (σ)** | A measure of spread — how much individual values vary from the average |
+| **Fuzzy matching** | Comparing strings for similarity rather than exact equality — "ACME Inc" and "Acme, Inc." would score ~95 |
+| **WRatio** | A fuzzy matching score (0–100) combining multiple string-distance measures, optimised for real-world company names |
+| **Union-Find** | A data structure that efficiently groups items where transitivity applies: if A~B and B~C, all three are grouped together |
+| **Canonical name** | The single standardised name chosen to represent all variants of a supplier name in the source data |
+| **Spend fingerprint** | A numerical vector describing a supplier's spend distribution across all categories |
+| **Dominant category** | The category with the highest average spend within a consolidation cluster |
+
+---
+
+## 6. Interpreting the Dashboards
 
 ### Vendor Ranking dashboard (Superset)
 
@@ -238,7 +756,7 @@ need any pre-defined rules or historical anomaly labels to get started.
 
 ---
 
-## 6. How to Trigger a Fresh Analysis
+## 7. How to Trigger a Fresh Analysis
 
 The ML pipeline analyses your latest procurement data and refreshes all scores,
 clusters, and anomaly flags. You can trigger it in two ways:
@@ -263,7 +781,7 @@ To force an immediate refresh, click the **↻ Refresh** icon on any dashboard.
 
 ---
 
-## 7. Glossary
+## 8. Glossary
 
 | Term | Plain-English meaning |
 |------|-----------------------|
