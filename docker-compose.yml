@@ -1,0 +1,222 @@
+version: "3.9"
+
+# ============================================================
+# AI-Powered Supplier Intelligence Platform
+# ============================================================
+
+networks:
+  supplier-net:
+    driver: bridge
+
+volumes:
+  sqlserver-data:
+  superset-home:
+
+services:
+
+  # ── SQL Server 2022 ──────────────────────────────────────────────────────────
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: supplier-sqlserver
+    environment:
+      ACCEPT_EULA: "Y"
+      SA_PASSWORD: "${MSSQL_SA_PASSWORD:-SupplierIntelligence2024!}"
+      MSSQL_PID: Developer
+    ports:
+      - "${MSSQL_HOST_PORT:-1433}:1433"
+    volumes:
+      - sqlserver-data:/var/opt/mssql
+    networks:
+      - supplier-net
+    healthcheck:
+      test: >
+        /opt/mssql-tools18/bin/sqlcmd
+        -S localhost -U sa -P "$$SA_PASSWORD"
+        -Q "SELECT 1" -No -C
+        || exit 1
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
+
+  # ── DB Migrations (one-shot) ─────────────────────────────────────────────────
+  db-migrate:
+    build:
+      context: data-seed
+      dockerfile: Dockerfile
+      target: migrate
+    container_name: supplier-db-migrate
+    environment:
+      MSSQL_HOST: sqlserver
+      MSSQL_PORT: "1433"
+      MSSQL_DATABASE: "${MSSQL_DATABASE:-SupplierIntelligence}"
+      MSSQL_USER: sa
+      MSSQL_SA_PASSWORD: "${MSSQL_SA_PASSWORD:-SupplierIntelligence2024!}"
+      MIGRATIONS_DIR: /migrations
+    volumes:
+      - ./db/migrations:/migrations:ro
+    networks:
+      - supplier-net
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+    command: ["python", "seed.py", "--mode", "migrate"]
+    restart: "no"
+
+  # ── Data Seed (profile:seed) ─────────────────────────────────────────────────
+  data-seed:
+    build:
+      context: data-seed
+      dockerfile: Dockerfile
+      target: seed
+    container_name: supplier-data-seed
+    environment:
+      MSSQL_HOST: sqlserver
+      MSSQL_PORT: "1433"
+      MSSQL_DATABASE: "${MSSQL_DATABASE:-SupplierIntelligence}"
+      MSSQL_USER: sa
+      MSSQL_SA_PASSWORD: "${MSSQL_SA_PASSWORD:-SupplierIntelligence2024!}"
+      SEED_FILE_PATH: "${SEED_FILE_PATH:-/data/data.xlsx}"
+      MIGRATIONS_DIR: /migrations
+    volumes:
+      - ./db/migrations:/migrations:ro
+      - ./data.xlsx:/data/data.xlsx:ro
+    networks:
+      - supplier-net
+    depends_on:
+      db-migrate:
+        condition: service_completed_successfully
+    profiles:
+      - seed
+    restart: "no"
+
+  # ── ML Engine ────────────────────────────────────────────────────────────────
+  ml-engine:
+    build:
+      context: ml-engine
+      dockerfile: Dockerfile
+      target: production
+    container_name: supplier-ml-engine
+    environment:
+      MSSQL_HOST: sqlserver
+      MSSQL_PORT: "1433"
+      MSSQL_DATABASE: "${MSSQL_DATABASE:-SupplierIntelligence}"
+      MSSQL_USER: sa
+      MSSQL_SA_PASSWORD: "${MSSQL_SA_PASSWORD:-SupplierIntelligence2024!}"
+      MODEL_CONFIG_PATH: /config/model_config.yml
+      PYTHONPATH: /app
+    volumes:
+      - ./ml-engine/config:/config:ro
+    ports:
+      - "5001:5001"
+    networks:
+      - supplier-net
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 45s
+    restart: unless-stopped
+
+  # ── .NET 8 REST API ──────────────────────────────────────────────────────────
+  api:
+    build:
+      context: api
+      dockerfile: Dockerfile
+    container_name: supplier-api
+    environment:
+      ASPNETCORE_ENVIRONMENT: "${ASPNETCORE_ENVIRONMENT:-Production}"
+      ASPNETCORE_URLS: "http://+:8080"
+      MSSQL_SA_PASSWORD: "${MSSQL_SA_PASSWORD:-SupplierIntelligence2024!}"
+      ConnectionStrings__DefaultConnection: >-
+        Server=sqlserver,1433;Database=${MSSQL_DATABASE:-SupplierIntelligence};
+        User Id=sa;Password=${MSSQL_SA_PASSWORD:-SupplierIntelligence2024!};
+        TrustServerCertificate=True;Encrypt=True;
+      MlEngine__BaseUrl: "http://ml-engine:5001"
+      ModelConfigPath: /config/model_config.yml
+    volumes:
+      - ./ml-engine/config:/config:ro
+    ports:
+      - "${API_HOST_PORT:-8080}:8080"
+    networks:
+      - supplier-net
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+      ml-engine:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/v1/admin/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    restart: unless-stopped
+
+  # ── Apache Superset Dashboards ────────────────────────────────────────────────
+  superset:
+    build:
+      context: reports
+      dockerfile: Dockerfile
+    container_name: supplier-superset
+    environment:
+      SUPERSET_SECRET_KEY: "${SUPERSET_SECRET_KEY:-supplier-intelligence-secret-key}"
+      SUPERSET_ADMIN_USER: "${SUPERSET_ADMIN_USER:-admin}"
+      SUPERSET_ADMIN_PASSWORD: "${SUPERSET_ADMIN_PASSWORD:-Admin1234!}"
+      MSSQL_HOST: sqlserver
+      MSSQL_PORT: "1433"
+      MSSQL_DATABASE: "${MSSQL_DATABASE:-SupplierIntelligence}"
+      MSSQL_USER: sa
+      MSSQL_SA_PASSWORD: "${MSSQL_SA_PASSWORD:-SupplierIntelligence2024!}"
+      PYTHONPATH: /app/pythonpath
+    volumes:
+      - superset-home:/app/superset_home
+    ports:
+      - "${SUPERSET_HOST_PORT:-8088}:8088"
+    networks:
+      - supplier-net
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8088/health"]
+      interval: 30s
+      timeout: 15s
+      retries: 5
+      start_period: 120s
+    restart: unless-stopped
+
+  # ── Test Runner (profile:test) ────────────────────────────────────────────────
+  test:
+    build:
+      context: ml-engine
+      dockerfile: Dockerfile
+      target: test
+    container_name: supplier-test
+    environment:
+      MSSQL_HOST: sqlserver
+      MSSQL_PORT: "1433"
+      MSSQL_DATABASE: "SupplierIntelligenceTest"
+      MSSQL_USER: sa
+      MSSQL_SA_PASSWORD: "${MSSQL_SA_PASSWORD:-SupplierIntelligence2024!}"
+      MODEL_CONFIG_PATH: /config/model_config.yml
+      API_BASE_URL: "http://api:8080/api/v1"
+      ML_BASE_URL: "http://ml-engine:5001"
+      PYTHONPATH: /app
+    volumes:
+      - ./ml-engine/config:/config:ro
+    networks:
+      - supplier-net
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+    profiles:
+      - test
+    restart: "no"

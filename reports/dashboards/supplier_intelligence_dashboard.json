@@ -1,0 +1,84 @@
+{
+  "dashboard_title": "Supplier Intelligence Platform",
+  "description": "AI-powered procurement analytics: Vendor Ranking, Consolidation, and Anomaly Detection",
+  "position_json": "{\"DASHBOARD_VERSION_KEY\":\"v2\",\"ROOT_ID\":{\"children\":[\"GRID_ID\"],\"id\":\"ROOT_ID\",\"type\":\"ROOT\"},\"GRID_ID\":{\"children\":[\"ROW-vendor-ranking\",\"ROW-anomaly-detection\",\"ROW-consolidation\"],\"id\":\"GRID_ID\",\"type\":\"GRID\"},\"ROW-vendor-ranking\":{\"children\":[\"CHART-score-bar\",\"CHART-band-pie\"],\"id\":\"ROW-vendor-ranking\",\"meta\":{\"background\":\"BACKGROUND_TRANSPARENT\"},\"type\":\"ROW\"},\"ROW-anomaly-detection\":{\"children\":[\"CHART-anomaly-table\",\"CHART-anomaly-hist\"],\"id\":\"ROW-anomaly-detection\",\"meta\":{\"background\":\"BACKGROUND_TRANSPARENT\"},\"type\":\"ROW\"},\"ROW-consolidation\":{\"children\":[\"CHART-consolidation-treemap\",\"CHART-consolidation-members\"],\"id\":\"ROW-consolidation\",\"meta\":{\"background\":\"BACKGROUND_TRANSPARENT\"},\"type\":\"ROW\"}}",
+  "metadata": {
+    "color_scheme": "supersetColors",
+    "refresh_frequency": 3600,
+    "timed_refresh_immune_slices": [],
+    "expanded_slices": {}
+  },
+  "slices": [
+    {
+      "slice_name": "Top 20 Vendors by Score",
+      "viz_type": "bar",
+      "datasource_type": "table",
+      "params": {
+        "metrics": [{"expressionType": "SIMPLE", "column": {"column_name": "CompositeScore"}, "aggregate": "AVG", "label": "Avg Score"}],
+        "groupby": ["CanonicalVendorName"],
+        "row_limit": 20,
+        "order_desc": true,
+        "color_scheme": "supersetColors",
+        "x_axis_label": "Vendor",
+        "y_axis_label": "Composite Score (0-100)"
+      }
+    },
+    {
+      "slice_name": "Performance Band Distribution",
+      "viz_type": "pie",
+      "datasource_type": "table",
+      "params": {
+        "metrics": [{"expressionType": "SIMPLE", "column": {"column_name": "Id"}, "aggregate": "COUNT", "label": "Count"}],
+        "groupby": ["PerformanceBand"],
+        "color_scheme": "supersetColors",
+        "show_legend": true,
+        "show_labels": true
+      }
+    },
+    {
+      "slice_name": "Anomaly Flags",
+      "viz_type": "table",
+      "datasource_type": "table",
+      "params": {
+        "all_columns": ["PO_Number", "CanonicalVendorName", "Category", "Severity", "SpendGap", "AnomalyScore", "ZScore", "ReasonString"],
+        "order_by_cols": ["[\"AnomalyScore\", false]"],
+        "row_limit": 1000,
+        "table_filter": true,
+        "page_length": 25
+      }
+    },
+    {
+      "slice_name": "Anomaly Score Distribution",
+      "viz_type": "histogram",
+      "datasource_type": "table",
+      "params": {
+        "all_columns": ["AnomalyScore"],
+        "bins": 20,
+        "x_axis_label": "Anomaly Score",
+        "y_axis_label": "Count"
+      }
+    },
+    {
+      "slice_name": "Consolidation Opportunities (Treemap)",
+      "viz_type": "treemap_v2",
+      "datasource_type": "table",
+      "params": {
+        "metrics": [{"expressionType": "SIMPLE", "column": {"column_name": "TotalSpendAtStake"}, "aggregate": "SUM", "label": "Total Spend at Stake"}],
+        "groupby": ["DominantCategory", "ClusterLabel"],
+        "color_scheme": "supersetColors",
+        "show_labels": true
+      }
+    },
+    {
+      "slice_name": "Consolidation Cluster Members",
+      "viz_type": "table",
+      "datasource_type": "table",
+      "params": {
+        "all_columns": ["ClusterLabel", "DominantCategory", "VendorCount", "TotalSpendAtStake", "EstimatedSavingAmount", "EstimatedSavingPct"],
+        "order_by_cols": ["[\"TotalSpendAtStake\", false]"],
+        "row_limit": 500,
+        "page_length": 20
+      }
+    }
+  ]
+}

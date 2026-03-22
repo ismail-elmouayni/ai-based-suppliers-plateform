@@ -1,0 +1,12 @@
+{
+  "profiles": {
+    "SupplierIntelligence.Api": {
+      "commandName": "Project",
+      "launchBrowser": true,
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      },
+      "applicationUrl": "https://localhost:54537;http://localhost:54538"
+    }
+  }
+}

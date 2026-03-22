@@ -1,0 +1,87 @@
+# ============================================================
+# Supplier Intelligence Platform — ML Model Configuration
+# ============================================================
+# Changes take effect on the NEXT ML run; no redeployment required.
+# This file is mounted read-only into both ml-engine and api containers.
+
+vendor_scoring:
+  # Weight for mean Saving_Pct (stored as 0–1 ratio, e.g. 0.15 = 15% savings).
+  # Increase this if savings performance is your top priority.
+  saving_pct_weight: 0.50
+
+  # Weight for total Spend volume across all POs for this vendor+category pair.
+  # Increase this to prioritise high-spend suppliers in ranking.
+  spend_weight: 0.30
+
+  # Weight for how focused the vendor is on this specific category
+  # (vendor spend in category / vendor total spend across all categories).
+  # Increase this to reward specialist suppliers over generalists.
+  specialization_weight: 0.20
+
+  # Minimum number of POs required to produce a score.
+  # Vendor+category pairs with fewer POs receive band = INSUFFICIENT_DATA.
+  min_po_count_for_scoring: 3
+
+  # Composite score thresholds for performance bands (0–100 scale).
+  # Score ≥ band_green_min  → GREEN
+  # Score ≥ band_amber_min  → AMBER
+  # Score <  band_amber_min → RED
+  band_green_min: 70
+  band_amber_min: 40
+
+anomaly_detection:
+  # Proportion of POs expected to be anomalous.
+  # Range: 0.01 (flag only extreme outliers) – 0.50 (flag half of all POs).
+  # Increase to catch more potential issues; decrease for precision over recall.
+  contamination_factor: 0.05
+
+  # Z-score thresholds for severity classification of the spend gap.
+  # |z| ≥ severity_high_zscore   → HIGH severity
+  # |z| ≥ severity_medium_zscore → MEDIUM severity
+  # |z| <  severity_medium_zscore → LOW severity
+  severity_high_zscore: 3.0
+  severity_medium_zscore: 2.0
+
+  # IsolationForest hyperparameters
+  n_estimators: 100
+  random_state: 42
+
+consolidation:
+  # Clusters with fewer vendors than this are discarded as noise.
+  min_cluster_size: 2
+
+  # Clustering algorithm: 'kmeans' or 'dbscan'
+  algorithm: kmeans
+
+  # Number of clusters. 'auto' uses the elbow method (tries k = 2..10).
+  # Set a specific integer (e.g. 5) to override automatic selection.
+  n_clusters: auto
+
+  # DBSCAN parameters (only used when algorithm = 'dbscan')
+  dbscan_eps: 0.5
+  dbscan_min_samples: 2
+
+entity_resolution:
+  # Minimum rapidfuzz WRatio score (0–100) to consider two vendor names a match.
+  # Lower values increase recall (more matches); higher values increase precision.
+  match_threshold: 85
+
+  # Number of top candidates to evaluate per name during fuzzy matching.
+  top_k_candidates: 5
+
+  # Normalise vendor names to uppercase and strip extra whitespace before matching.
+  normalize_before_match: true
+
+  # Legal suffixes stripped before matching (case-insensitive).
+  strip_suffixes:
+    - SARL
+    - SARLAU
+    - SA
+    - SAS
+    - INC
+    - "S.A"
+    - GMBH
+    - LTD
+    - LLC
+    - CORP
+    - STE
