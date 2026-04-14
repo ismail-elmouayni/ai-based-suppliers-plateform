@@ -1,23 +1,23 @@
 {
   "format": 1,
   "restore": {
-    "C:\\Repos\\AI.SIP\\api\\SupplierIntelligence.Api\\SupplierIntelligence.Api.csproj": {}
+    "F:\\Repos\\ai-based-suppliers-plateform\\api\\SupplierIntelligence.Api\\SupplierIntelligence.Api.csproj": {}
   },
   "projects": {
-    "C:\\Repos\\AI.SIP\\api\\SupplierIntelligence.Api\\SupplierIntelligence.Api.csproj": {
+    "F:\\Repos\\ai-based-suppliers-plateform\\api\\SupplierIntelligence.Api\\SupplierIntelligence.Api.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "C:\\Repos\\AI.SIP\\api\\SupplierIntelligence.Api\\SupplierIntelligence.Api.csproj",
+        "projectUniqueName": "F:\\Repos\\ai-based-suppliers-plateform\\api\\SupplierIntelligence.Api\\SupplierIntelligence.Api.csproj",
         "projectName": "SupplierIntelligence.Api",
-        "projectPath": "C:\\Repos\\AI.SIP\\api\\SupplierIntelligence.Api\\SupplierIntelligence.Api.csproj",
-        "packagesPath": "C:\\Users\\e030332\\.nuget\\packages\\",
-        "outputPath": "C:\\Repos\\AI.SIP\\api\\SupplierIntelligence.Api\\obj\\",
+        "projectPath": "F:\\Repos\\ai-based-suppliers-plateform\\api\\SupplierIntelligence.Api\\SupplierIntelligence.Api.csproj",
+        "packagesPath": "C:\\Users\\ismai\\.nuget\\packages\\",
+        "outputPath": "F:\\Repos\\ai-based-suppliers-plateform\\api\\SupplierIntelligence.Api\\obj\\",
         "projectStyle": "PackageReference",
         "fallbackFolders": [
           "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"
         ],
         "configFilePaths": [
-          "C:\\Users\\e030332\\AppData\\Roaming\\NuGet\\NuGet.Config",
+          "C:\\Users\\ismai\\AppData\\Roaming\\NuGet\\NuGet.Config",
           "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.FallbackLocation.config",
           "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.Offline.config"
         ],
@@ -89,7 +89,7 @@
               "privateAssets": "all"
             }
           },
-          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\9.0.304/PortableRuntimeIdentifierGraph.json"
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\9.0.311/PortableRuntimeIdentifierGraph.json"
         }
       }
     }

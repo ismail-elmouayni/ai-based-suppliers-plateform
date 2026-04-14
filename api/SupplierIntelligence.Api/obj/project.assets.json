@@ -4544,23 +4544,23 @@
     ]
   },
   "packageFolders": {
-    "C:\\Users\\e030332\\.nuget\\packages\\": {},
+    "C:\\Users\\ismai\\.nuget\\packages\\": {},
     "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages": {}
   },
   "project": {
     "version": "1.0.0",
     "restore": {
-      "projectUniqueName": "C:\\Repos\\AI.SIP\\api\\SupplierIntelligence.Api\\SupplierIntelligence.Api.csproj",
+      "projectUniqueName": "F:\\Repos\\ai-based-suppliers-plateform\\api\\SupplierIntelligence.Api\\SupplierIntelligence.Api.csproj",
       "projectName": "SupplierIntelligence.Api",
-      "projectPath": "C:\\Repos\\AI.SIP\\api\\SupplierIntelligence.Api\\SupplierIntelligence.Api.csproj",
-      "packagesPath": "C:\\Users\\e030332\\.nuget\\packages\\",
-      "outputPath": "C:\\Repos\\AI.SIP\\api\\SupplierIntelligence.Api\\obj\\",
+      "projectPath": "F:\\Repos\\ai-based-suppliers-plateform\\api\\SupplierIntelligence.Api\\SupplierIntelligence.Api.csproj",
+      "packagesPath": "C:\\Users\\ismai\\.nuget\\packages\\",
+      "outputPath": "F:\\Repos\\ai-based-suppliers-plateform\\api\\SupplierIntelligence.Api\\obj\\",
       "projectStyle": "PackageReference",
       "fallbackFolders": [
         "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"
       ],
       "configFilePaths": [
-        "C:\\Users\\e030332\\AppData\\Roaming\\NuGet\\NuGet.Config",
+        "C:\\Users\\ismai\\AppData\\Roaming\\NuGet\\NuGet.Config",
         "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.FallbackLocation.config",
         "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.Offline.config"
       ],
@@ -4632,8 +4632,28 @@
             "privateAssets": "all"
           }
         },
-        "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\9.0.304/PortableRuntimeIdentifierGraph.json"
+        "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\9.0.311/PortableRuntimeIdentifierGraph.json"
       }
     }
-  }
+  },
+  "logs": [
+    {
+      "code": "NU1301",
+      "level": "Error",
+      "message": "Unable to load the service index for source https://pkgs.dev.azure.com/DTD-AMF/DTD/_packaging/AMF-DTD/nuget/v3/index.json.\r\n  Response status code does not indicate success: 401 (Unauthorized).",
+      "libraryId": "YamlDotNet"
+    },
+    {
+      "code": "NU1301",
+      "level": "Error",
+      "message": "Unable to load the service index for source https://pkgs.dev.azure.com/DTD-AMF/DTD/_packaging/AMF-DTD/nuget/v3/index.json.\r\n  Response status code does not indicate success: 401 (Unauthorized).",
+      "libraryId": "Microsoft.EntityFrameworkCore.SqlServer"
+    },
+    {
+      "code": "NU1900",
+      "level": "Warning",
+      "warningLevel": 1,
+      "message": "Error occurred while getting package vulnerability data: Unable to load the service index for source https://pkgs.dev.azure.com/DTD-AMF/DTD/_packaging/AMF-DTD/nuget/v3/index.json."
+    }
+  ]
 }
