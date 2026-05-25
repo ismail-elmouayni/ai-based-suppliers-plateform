@@ -212,10 +212,13 @@ class ExcelWriter:
             ("Category",                 20),
             ("CompositeScore",           16),
             ("PerformanceBand",          18),
-            ("RawAverageSavingPercent",  16),
+            ("SavingPctNorm",            16),
+            ("SpendNorm",                14),
+            ("SpecializationNorm",       18),
+            ("RawAverageSavingPercent",  22),
             ("RawTotalSpend",            16),
             ("RawSpecialization",        18),
-            ("RawPurchaseCount",         10),
+            ("RawPurchaseCount",         14),
         ]
 
         df = pd.DataFrame([
@@ -224,6 +227,9 @@ class ExcelWriter:
                 "Category":                s.category,
                 "CompositeScore":          s.composite_score,
                 "PerformanceBand":         s.performance_band,
+                "SavingPctNorm":           s.saving_pct_norm,
+                "SpendNorm":               s.spend_norm,
+                "SpecializationNorm":      s.specialization_norm,
                 "RawAverageSavingPercent": s.raw_average_saving_percent,
                 "RawTotalSpend":           s.raw_total_spend,
                 "RawSpecialization":       s.raw_specialization,
