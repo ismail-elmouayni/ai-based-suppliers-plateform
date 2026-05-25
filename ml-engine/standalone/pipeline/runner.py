@@ -40,7 +40,7 @@ if str(_WORKSPACE_ROOT) not in sys.path:
     sys.path.insert(0, str(_WORKSPACE_ROOT))
 
 from entity_resolution.resolver import VendorResolver     # noqa: E402
-from vendor_scoring.scorer import VendorScorer             # noqa: E402
+from vendor_scoring.vendor_scorer import VendorScorer             # noqa: E402
 from consolidation.clusterer import VendorClusterer        # noqa: E402
 from anomaly_detection.detector import AnomalyDetector     # noqa: E402
 from config_types import VendorScoringConfig               # noqa: E402

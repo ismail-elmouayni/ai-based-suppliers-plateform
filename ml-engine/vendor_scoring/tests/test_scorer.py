@@ -5,7 +5,7 @@ import numpy as np
 
 from config_types import VendorScoringConfig
 from data_source_columns import DataSourceColumns
-from vendor_scoring.scorer import VendorScorer
+from vendor_scoring.vendor_scorer import VendorScorer
 from vendor_scoring.vendor_score import PerformanceBand, VendorScore
 
 BASE_CFG = VendorScoringConfig(

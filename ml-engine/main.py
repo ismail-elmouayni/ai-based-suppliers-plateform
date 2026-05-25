@@ -23,7 +23,7 @@ from flask import Flask, jsonify, request
 
 from db.repository import DataRepository
 from entity_resolution.resolver import VendorResolver
-from vendor_scoring.scorer import VendorScorer
+from vendor_scoring.vendor_scorer import VendorScorer
 from consolidation.clusterer import VendorClusterer
 from anomaly_detection.detector import AnomalyDetector
 from config_types import (
