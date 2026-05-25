@@ -26,7 +26,7 @@ def make_df(vendors, po_prefix="PO"):
 
 class TestVendorResolver:
     def setup_method(self):
-        self.resolver = VendorResolver(EntityResolutionConfig.from_dict(CONFIG["entity_resolution"]))
+        self.resolver = VendorResolver(EntityResolutionConfig.from_dict(CONFIG))
 
     def test_exact_match_self(self):
         """A vendor resolves to itself."""

@@ -12,7 +12,7 @@ Example
 -------
 ::
 
-    cfg = AnomalyConfig.from_dict(yaml_config.get("anomaly_detection", {}))
+    cfg = AnomalyConfig.from_dict(yaml_config)
     cfg.contamination_factor   # float, default 0.05
 """
 
@@ -24,6 +24,7 @@ from typing import Any
 @dataclass(frozen=True)
 class AnomalyConfig:
     """Configuration for :class:`anomaly_detection.detector.AnomalyDetector`."""
+    CONFIG_KEY = "anomaly_detection"
     contamination_factor: float = 0.05
     severity_high_zscore: float = 3.0
     severity_medium_zscore: float = 2.0
@@ -32,6 +33,7 @@ class AnomalyConfig:
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> AnomalyConfig:
+        d = d.get(cls.CONFIG_KEY, {})
         return cls(
             contamination_factor=float(d.get("contamination_factor", 0.05)),
             severity_high_zscore=float(d.get("severity_high_zscore", 3.0)),
@@ -44,6 +46,7 @@ class AnomalyConfig:
 @dataclass(frozen=True)
 class EntityResolutionConfig:
     """Configuration for :class:`entity_resolution.resolver.VendorResolver`."""
+    CONFIG_KEY = "entity_resolution"
     match_threshold: float = 85.0
     top_k_candidates: int = 5
     normalize_before_match: bool = True
@@ -51,6 +54,7 @@ class EntityResolutionConfig:
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> EntityResolutionConfig:
+        d = d.get(cls.CONFIG_KEY, {})
         return cls(
             match_threshold=float(d.get("match_threshold", 85)),
             top_k_candidates=int(d.get("top_k_candidates", 5)),
@@ -62,6 +66,7 @@ class EntityResolutionConfig:
 @dataclass
 class VendorScoringConfig:
     """Configuration for :class:`vendor_scoring.scorer.VendorScorer`."""
+    CONFIG_KEY = "vendor_scoring"
     saving_pct_weight: float = 0.50
     spend_weight: float = 0.30
     specialization_weight: float = 0.20
@@ -79,6 +84,7 @@ class VendorScoringConfig:
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> VendorScoringConfig:
+        d = d.get(cls.CONFIG_KEY, {})
         return cls(
             saving_pct_weight=float(d.get("saving_pct_weight", 0.50)),
             spend_weight=float(d.get("spend_weight", 0.30)),
@@ -92,6 +98,7 @@ class VendorScoringConfig:
 @dataclass(frozen=True)
 class ConsolidationConfig:
     """Configuration for :class:`consolidation.clusterer.VendorClusterer`."""
+    CONFIG_KEY = "consolidation"
     min_cluster_size: int = 2
     algorithm: str = "kmeans"
     n_clusters: int | str = "auto"
@@ -100,6 +107,7 @@ class ConsolidationConfig:
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> ConsolidationConfig:
+        d = d.get(cls.CONFIG_KEY, {})
         return cls(
             min_cluster_size=int(d.get("min_cluster_size", 2)),
             algorithm=str(d.get("algorithm", "kmeans")).lower(),

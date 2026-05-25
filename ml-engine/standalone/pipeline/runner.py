@@ -68,10 +68,10 @@ class StandalonePipeline:
 
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
-        self.resolver  = VendorResolver(EntityResolutionConfig.from_dict(config.get("entity_resolution", {})))
-        self.scorer    = VendorScorer(VendorScoringConfig.from_dict(config.get("vendor_scoring", {})))
-        self.clusterer = VendorClusterer(ConsolidationConfig.from_dict(config.get("consolidation", {})))
-        self.detector  = AnomalyDetector(config)
+        self.vendor_name_resolver   = VendorResolver(EntityResolutionConfig.from_dict(config))
+        self.vendor_scorer          = VendorScorer(VendorScoringConfig.from_dict(config))
+        self.vendor_clusterer       = VendorClusterer(ConsolidationConfig.from_dict(config))
+        self.anomaly_detector       = AnomalyDetector(config)
 
     # ------------------------------------------------------------------
     # Public API
@@ -157,7 +157,7 @@ class StandalonePipeline:
         return df
 
     def _resolve_vendors(self, raw_df: pd.DataFrame) -> list:
-        mappings = self.resolver.resolve(raw_df, run_id=0)
+        mappings = self.vendor_name_resolver.resolve(raw_df, run_id=0)
         unique_canonical = len({m.canonical_vendor_name for m in mappings})
         logger.info(
             "  Resolved %d raw names \u2192 %d canonical vendors.",
@@ -181,19 +181,19 @@ class StandalonePipeline:
         return df
 
     def _score_vendors(self, raw_df: pd.DataFrame) -> list:
-        scores_df = self.scorer.score(raw_df, run_id=0)
+        scores_df = self.vendor_scorer.score(raw_df, run_id=0)
         logger.info("  Scored %d vendor+category pairs.", len(scores_df))
         return scores_df
 
     def _cluster_vendors(
         self, raw_df: pd.DataFrame
     ) -> tuple[list, list]:
-        result = self.clusterer.cluster(raw_df, run_id=0)
+        result = self.vendor_clusterer.cluster(raw_df, run_id=0)
         logger.info("  Found %d consolidation clusters.", len(result.clusters))
         return result.clusters, result.members
 
     def _detect_anomalies(self, raw_df: pd.DataFrame) -> list:
-        flags = self.detector.detect(raw_df, run_id=0)
+        flags = self.anomaly_detector.detect(raw_df, run_id=0)
         logger.info("  Flagged %d anomalous POs.", len(flags))
         return flags
 

@@ -40,7 +40,7 @@ def make_df(n_vendors=6, n_categories=3, seed=42):
 
 class TestVendorClusterer:
     def setup_method(self):
-        self.clusterer = VendorClusterer(ConsolidationConfig.from_dict(CONFIG["consolidation"]))
+        self.clusterer = VendorClusterer(ConsolidationConfig.from_dict(CONFIG))
 
     def test_clusters_returned(self):
         """Clustering produces at least one cluster."""
@@ -62,7 +62,7 @@ class TestVendorClusterer:
             rows.append({DataSourceColumns.CANONICAL_VENDOR: v, DataSourceColumns.CATEGORY: "CAT_0", DataSourceColumns.SPEND: 1000000.0, DataSourceColumns.SAVING_PERCENT: 0.10, DataSourceColumns.PURCHASE_ORDERS_NUMBER: f"PO-{v}-0"})
             rows.append({DataSourceColumns.CANONICAL_VENDOR: v, DataSourceColumns.CATEGORY: "CAT_1", DataSourceColumns.SPEND: 1.0, DataSourceColumns.SAVING_PERCENT: 0.10, DataSourceColumns.PURCHASE_ORDERS_NUMBER: f"PO-{v}-1"})
         df = pd.DataFrame(rows)
-        cfg = ConsolidationConfig.from_dict({**CONFIG["consolidation"], "n_clusters": 1, "min_cluster_size": 2})
+        cfg = ConsolidationConfig.from_dict({ConsolidationConfig.CONFIG_KEY: {**CONFIG["consolidation"], "n_clusters": 1, "min_cluster_size": 2}})
         clusterer = VendorClusterer(cfg)
         clusters, _ = clusterer.cluster(df, run_id=1)
         if clusters:

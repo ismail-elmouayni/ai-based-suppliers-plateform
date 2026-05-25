@@ -60,9 +60,9 @@ class Pipeline:
     def __init__(self, repo: DataRepository, config: dict[str, Any]) -> None:
         self.repo = repo
         self.config = config
-        self.resolver  = VendorResolver(EntityResolutionConfig.from_dict(config.get("entity_resolution", {})))
-        self.scorer    = VendorScorer(VendorScoringConfig.from_dict(config.get("vendor_scoring", {})))
-        self.clusterer = VendorClusterer(ConsolidationConfig.from_dict(config.get("consolidation", {})))
+        self.resolver  = VendorResolver(EntityResolutionConfig.from_dict(config))
+        self.scorer    = VendorScorer(VendorScoringConfig.from_dict(config))
+        self.clusterer = VendorClusterer(ConsolidationConfig.from_dict(config))
         self.detector  = AnomalyDetector(config)
 
     def run(self, run_id: int, triggered_by: str = "SYSTEM") -> None:

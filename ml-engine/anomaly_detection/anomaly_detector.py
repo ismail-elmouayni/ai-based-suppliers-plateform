@@ -39,7 +39,7 @@ class _AnomalyFeatures(NamedTuple):
 
 class AnomalyDetector:
     def __init__(self, config: dict[str, Any]) -> None:
-        cfg = AnomalyConfig.from_dict(config.get("anomaly_detection", {}))
+        cfg = AnomalyConfig.from_dict(config)
         self.contamination      = cfg.contamination_factor
         self.severity_high_z    = cfg.severity_high_zscore
         self.severity_medium_z  = cfg.severity_medium_zscore
@@ -151,7 +151,7 @@ class AnomalyDetector:
         z_scores = self._compute_zscores(df, features.spend_gap)
 
         flags: list[AnomalyFlag] = []
-        
+
         for pos, idx in enumerate(df.index):
             if predictions[pos] == -1:
                 flag = AnomalyFlag.from_detection(
