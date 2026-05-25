@@ -22,9 +22,9 @@ import yaml
 from flask import Flask, jsonify, request
 
 from db.repository import DataRepository
-from entity_resolution.resolver import VendorResolver
+from entity_resolution.vendor_resolver import VendorResolver
 from vendor_scoring.vendor_scorer import VendorScorer
-from consolidation.clusterer import VendorClusterer
+from consolidation.vendor_clusterer import VendorClusterer
 from anomaly_detection.anomaly_detector import AnomalyDetector
 from config_types import (
     AnomalyConfig,
@@ -60,9 +60,9 @@ class Pipeline:
     def __init__(self, repo: DataRepository, config: dict[str, Any]) -> None:
         self.repo = repo
         self.config = config
-        self.resolver  = VendorResolver(config)
+        self.resolver  = VendorResolver(EntityResolutionConfig.from_dict(config.get("entity_resolution", {})))
         self.scorer    = VendorScorer(VendorScoringConfig.from_dict(config.get("vendor_scoring", {})))
-        self.clusterer = VendorClusterer(config)
+        self.clusterer = VendorClusterer(ConsolidationConfig.from_dict(config.get("consolidation", {})))
         self.detector  = AnomalyDetector(config)
 
     def run(self, run_id: int, triggered_by: str = "SYSTEM") -> None:
@@ -78,12 +78,12 @@ class Pipeline:
 
             # 2. Entity resolution
             logger.info("Step 2/7: Running entity resolution...")
-            mapping_df = self.resolver.resolve(raw_df, run_id=run_id)
-            self.repo.write_resolved_vendors(mapping_df)
+            mappings = self.resolver.resolve(raw_df, run_id=run_id)
+            self.repo.write_resolved_vendors(mappings)
 
             # 3. Attach canonical names to raw data
             logger.info("Step 3/7: Attaching canonical vendor names...")
-            name_map = mapping_df.set_index("RawVendorName")[DataSourceColumns.CANONICAL_VENDOR].to_dict()
+            name_map = {m.raw_vendor_name: m.canonical_vendor_name for m in mappings}
             raw_df[DataSourceColumns.CANONICAL_VENDOR] = raw_df[DataSourceColumns.VENDOR].map(name_map).fillna(raw_df[DataSourceColumns.VENDOR])
 
             # 4. Clean categories (normalise NULL sentinels)
@@ -99,8 +99,8 @@ class Pipeline:
 
             # 6. Consolidation clustering
             logger.info("Step 5/7: Running consolidation clustering...")
-            clusters_df, members_df = self.clusterer.cluster(raw_df, run_id=run_id)
-            self.repo.write_consolidation(clusters_df, members_df)
+            result = self.clusterer.cluster(raw_df, run_id=run_id)
+            self.repo.write_consolidation(result.clusters, result.members)
 
             # 7. Anomaly detection
             logger.info("Step 6/7: Running anomaly detection...")

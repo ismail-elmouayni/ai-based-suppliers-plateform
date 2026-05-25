@@ -2,7 +2,9 @@
 
 import pytest
 import pandas as pd
-from entity_resolution.resolver import VendorResolver
+from entity_resolution.vendor_resolver import VendorResolver
+from entity_resolution.vendor_mapping import VendorMapping
+from config_types import EntityResolutionConfig
 from data_source_columns import DataSourceColumns
 
 CONFIG = {
@@ -24,13 +26,13 @@ def make_df(vendors, po_prefix="PO"):
 
 class TestVendorResolver:
     def setup_method(self):
-        self.resolver = VendorResolver(CONFIG)
+        self.resolver = VendorResolver(EntityResolutionConfig.from_dict(CONFIG["entity_resolution"]))
 
     def test_exact_match_self(self):
         """A vendor resolves to itself."""
         df = make_df(["SIEMENS AG"])
         result = self.resolver.resolve(df)
-        assert result.loc[result["RawVendorName"] == "SIEMENS AG", "CanonicalVendorName"].iloc[0] == "SIEMENS AG"
+        assert next(m.canonical_vendor_name for m in result if m.raw_vendor_name == "SIEMENS AG") == "SIEMENS AG"
 
     def test_teleperformance_group_resolves_to_one_canonical(self):
         """All Teleperformance variants must map to one canonical name."""
@@ -49,9 +51,7 @@ class TestVendorResolver:
         df = pd.DataFrame(rows)
         result = self.resolver.resolve(df)
 
-        canonicals = set(result["CanonicalVendorName"].unique())
-        # All variants should share the same canonical
-        mapped = result.set_index("RawVendorName")["CanonicalVendorName"]
+        mapped = {m.raw_vendor_name: m.canonical_vendor_name for m in result}
         canonical_set = {mapped[v] for v in variants if v in mapped}
         assert len(canonical_set) == 1, f"Expected 1 canonical, got {canonical_set}"
 
@@ -65,21 +65,21 @@ class TestVendorResolver:
         rows.append({DataSourceColumns.VENDOR: "TIGMAD CONSTRUCTION SARL", DataSourceColumns.PURCHASE_ORDERS_NUMBER: "PO-TIG-S-0"})
         df = pd.DataFrame(rows)
         result = self.resolver.resolve(df)
-        mapped = result.set_index("RawVendorName")["CanonicalVendorName"]
+        mapped = {m.raw_vendor_name: m.canonical_vendor_name for m in result}
         assert mapped["TIGMAD CONSTRUCTION"] == mapped["TIGMAD CONSTRUCTION SARL"]
 
     def test_below_threshold_stays_separate(self):
         """Two clearly different names should not be merged."""
         df = make_df(["MICROSOFT CORP", "TOTAL MAROC"])
         result = self.resolver.resolve(df)
-        mapped = result.set_index("RawVendorName")["CanonicalVendorName"]
+        mapped = {m.raw_vendor_name: m.canonical_vendor_name for m in result}
         assert mapped["MICROSOFT CORP"] != mapped["TOTAL MAROC"]
 
     def test_legal_suffix_stripping(self):
         """Suffix-stripped names are matched even if raw names differ by suffix only."""
         df = make_df(["ACME INDUSTRIES LTD", "ACME INDUSTRIES"])
         result = self.resolver.resolve(df)
-        mapped = result.set_index("RawVendorName")["CanonicalVendorName"]
+        mapped = {m.raw_vendor_name: m.canonical_vendor_name for m in result}
         assert mapped["ACME INDUSTRIES LTD"] == mapped["ACME INDUSTRIES"]
 
     def test_null_vendor_name_handled(self):
@@ -89,23 +89,29 @@ class TestVendorResolver:
             {DataSourceColumns.VENDOR: "VALID VENDOR", DataSourceColumns.PURCHASE_ORDERS_NUMBER: "PO-001"},
         ])
         result = self.resolver.resolve(df)
-        assert "VALID VENDOR" in result["RawVendorName"].values
+        assert any(m.raw_vendor_name == "VALID VENDOR" for m in result)
 
     def test_result_columns(self):
-        """Result DataFrame has all required columns."""
+        """Result objects have all required fields."""
         df = make_df(["VENDOR A", "VENDOR B"])
         result = self.resolver.resolve(df)
-        expected_cols = {"RawVendorName", "CanonicalVendorName", "MatchScore", "MatchMethod", "ResolutionRunId"}
-        assert expected_cols.issubset(set(result.columns))
+        assert len(result) == 2
+        m = result[0]
+        assert isinstance(m, VendorMapping)
+        assert hasattr(m, "raw_vendor_name")
+        assert hasattr(m, "canonical_vendor_name")
+        assert hasattr(m, "match_score")
+        assert hasattr(m, "match_method")
+        assert hasattr(m, "resolution_run_id")
 
     def test_run_id_propagated(self):
-        """run_id is stored in ResolutionRunId."""
+        """run_id is stored in resolution_run_id."""
         df = make_df(["VENDOR A"])
         result = self.resolver.resolve(df, run_id=42)
-        assert (result["ResolutionRunId"] == 42).all()
+        assert all(m.resolution_run_id == 42 for m in result)
 
     def test_empty_dataframe(self):
         """Empty input returns empty result without error."""
         df = pd.DataFrame(columns=[DataSourceColumns.VENDOR, DataSourceColumns.PURCHASE_ORDERS_NUMBER])
         result = self.resolver.resolve(df)
-        assert result.empty
+        assert result == []

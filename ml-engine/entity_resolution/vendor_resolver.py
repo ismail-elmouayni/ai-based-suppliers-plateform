@@ -12,44 +12,27 @@ Algorithm:
 from __future__ import annotations
 
 import logging
-import re
-from collections import defaultdict
-from typing import Any
+from collections import defaultdict, namedtuple
 
 import pandas as pd
 from rapidfuzz import fuzz, process
 
 from config_types import EntityResolutionConfig
+from core.string_processing import StringProcessing
 from data_source_columns import DataSourceColumns
+from entity_resolution.vendor_mapping import VendorMapping
 
 logger = logging.getLogger(__name__)
 
+_NameMapping = namedtuple("_NameMapping", ["raw_name", "canonical_name"])
+
 
 class VendorResolver:
-    def __init__(self, config: dict[str, Any]) -> None:
-        cfg = EntityResolutionConfig.from_dict(config.get("entity_resolution", {}))
+    def __init__(self, cfg: EntityResolutionConfig) -> None:
         self.match_threshold: float        = cfg.match_threshold
         self.top_k_candidates: int         = cfg.top_k_candidates
         self.normalize_before_match: bool  = cfg.normalize_before_match
         self.strip_suffixes: list[str]     = list(cfg.strip_suffixes)
-
-    # ------------------------------------------------------------------
-    # Normalisation
-    # ------------------------------------------------------------------
-
-    def _normalize(self, name: str) -> str:
-        """Uppercase, collapse whitespace, optionally strip legal suffixes."""
-        name = str(name).upper().strip()
-        name = re.sub(r"\s+", " ", name)
-        name = name.rstrip(",").strip()
-
-        if self.strip_suffixes and self.normalize_before_match:
-            # Strip trailing suffixes (with or without punctuation)
-            for suffix in sorted(self.strip_suffixes, key=len, reverse=True):
-                pattern = rf"\b{re.escape(suffix)}\.?\s*$"
-                name = re.sub(pattern, "", name).strip().rstrip(",").strip()
-
-        return name
 
     # ------------------------------------------------------------------
     # Clustering via union-find
@@ -66,9 +49,7 @@ class VendorResolver:
         if rx != ry:
             parent[ry] = rx
 
-    def _cluster_names(
-        self, unique_names: list[str], po_counts: dict[str, int]
-    ) -> dict[str, str]:
+    def _cluster_names(self, unique_names: list[str], po_counts: dict[str, int]) -> list[_NameMapping]:
         """
         Return {raw_name: canonical_name} mapping.
 
@@ -76,9 +57,12 @@ class VendorResolver:
         Canonical = most-frequent name in cluster.
         """
         if not unique_names:
-            return {}
+            return []
 
-        normalized = [self._normalize(n) for n in unique_names]
+        normalized = [
+            StringProcessing.normalize(n, strip_suffixes=self.strip_suffixes, normalize_before_match=self.normalize_before_match)
+            for n in unique_names
+        ]
         parent: dict[str, str] = {n: n for n in unique_names}
 
         # Build pairwise score matrix via cdist (more efficient than nested loops)
@@ -105,39 +89,27 @@ class VendorResolver:
             groups[root].append(name)
 
         # Canonical = highest PO-count member
-        mapping: dict[str, str] = {}
+        mappings: list[_NameMapping] = []
         for members in groups.values():
             canonical = max(members, key=lambda n: po_counts.get(n, 0))
             for m in members:
-                mapping[m] = canonical
+                mappings.append(_NameMapping(raw_name=m, canonical_name=canonical))
 
-        return mapping
+        return mappings
 
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
 
-    def resolve(
-        self, df: pd.DataFrame, run_id: int | None = None
-    ) -> pd.DataFrame:
+    def resolve(self, df: pd.DataFrame, run_id: int | None = None ) -> list[VendorMapping]:
         """
         Resolve vendor names in *df* (must have 'Vendor' and 'PO_Number' columns).
 
-        Returns a mapping DataFrame with columns:
-            RawVendorName, CanonicalVendorName, MatchScore, MatchMethod,
-            ResolutionRunId
+        Returns a list of VendorMapping objects (one per unique raw vendor name).
         """
         if df.empty or DataSourceColumns.VENDOR not in df.columns:
             logger.warning("resolve() called with empty or missing Vendor column.")
-            return pd.DataFrame(
-                columns=[
-                    "RawVendorName",
-                    "CanonicalVendorName",
-                    "MatchScore",
-                    "MatchMethod",
-                    "ResolutionRunId",
-                ]
-            )
+            return []
 
         # PO frequency per raw vendor name
         po_counts: dict[str, int] = (
@@ -151,29 +123,29 @@ class VendorResolver:
 
         mapping = self._cluster_names(unique_names, po_counts)
 
-        rows = []
-        for raw, canonical in mapping.items():
-            norm_raw = self._normalize(raw)
-            norm_can = self._normalize(canonical)
+        mappings: list[VendorMapping] = []
+        for entry in mapping:
+            norm_raw = StringProcessing.normalize(entry.raw_name, strip_suffixes=self.strip_suffixes, normalize_before_match=self.normalize_before_match)
+            norm_can = StringProcessing.normalize(entry.canonical_name, strip_suffixes=self.strip_suffixes, normalize_before_match=self.normalize_before_match)
             score = (
                 100.0
-                if raw == canonical
+                if entry.raw_name == entry.canonical_name
                 else fuzz.WRatio(norm_raw, norm_can)
             )
-            method = "EXACT" if raw == canonical else "FUZZY_WRATIO"
-            rows.append(
-                {
-                    "RawVendorName": raw,
-                    "CanonicalVendorName": canonical,
-                    "MatchScore": round(score, 2),
-                    "MatchMethod": method,
-                    "ResolutionRunId": run_id,
-                }
+            method = "EXACT" if entry.raw_name == entry.canonical_name else "FUZZY_WRATIO"
+            mappings.append(
+                VendorMapping(
+                    raw_vendor_name=entry.raw_name,
+                    canonical_vendor_name=entry.canonical_name,
+                    match_score=round(score, 2),
+                    match_method=method,
+                    resolution_run_id=run_id,
+                )
             )
 
-        result = pd.DataFrame(rows)
+        unique_canonical = len({m.canonical_vendor_name for m in mappings})
         logger.info(
             f"Resolution complete: {len(unique_names)} raw → "
-            f"{result['CanonicalVendorName'].nunique()} canonical vendors."
+            f"{unique_canonical} canonical vendors."
         )
-        return result
+        return mappings

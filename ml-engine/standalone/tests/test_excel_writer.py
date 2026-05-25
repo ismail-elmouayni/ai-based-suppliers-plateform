@@ -22,6 +22,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 import openpyxl
 from standalone.io.excel_writer import ExcelWriter
 from anomaly_detection.anomaly_flag import AnomalyFlag, Severity
+from consolidation.cluster_result import ClusterMember, ConsolidationCluster
+from entity_resolution.vendor_mapping import VendorMapping
 from vendor_scoring.vendor_score import PerformanceBand, VendorScore
 
 # ---------------------------------------------------------------------------
@@ -50,26 +52,26 @@ def _make_scores(n: int = 6) -> list[VendorScore]:
     ]
 
 
-def _make_clusters_df() -> pd.DataFrame:
-    return pd.DataFrame([
-        {"RunId": 0, "ClusterLabel": 0, "DominantCategory": "IT",
-         "VendorCount": 3, "TotalSpendAtStake": 500_000.0,
-         "EstimatedSavingPct": 0.05, "EstimatedSavingAmount": 25_000.0},
-        {"RunId": 0, "ClusterLabel": 1, "DominantCategory": "Logistics",
-         "VendorCount": 2, "TotalSpendAtStake": 200_000.0,
-         "EstimatedSavingPct": 0.08, "EstimatedSavingAmount": 16_000.0},
-    ])
+def _make_clusters() -> list[ConsolidationCluster]:
+    return [
+        ConsolidationCluster(run_id=0, cluster_label=0, dominant_category="IT",
+                             vendor_count=3, total_spend_at_stake=500_000.0,
+                             estimated_saving_pct=0.05, estimated_saving_amount=25_000.0),
+        ConsolidationCluster(run_id=0, cluster_label=1, dominant_category="Logistics",
+                             vendor_count=2, total_spend_at_stake=200_000.0,
+                             estimated_saving_pct=0.08, estimated_saving_amount=16_000.0),
+    ]
 
 
-def _make_members_df() -> pd.DataFrame:
-    return pd.DataFrame([
-        {"ClusterLabel": 0, "CanonicalVendorName": "VENDOR_A",
-         "VendorTotalSpend": 200_000.0, "CategoriesSupplied": "IT"},
-        {"ClusterLabel": 0, "CanonicalVendorName": "VENDOR_B",
-         "VendorTotalSpend": 150_000.0, "CategoriesSupplied": "IT,Logistics"},
-        {"ClusterLabel": 1, "CanonicalVendorName": "VENDOR_C",
-         "VendorTotalSpend": 120_000.0, "CategoriesSupplied": "Logistics"},
-    ])
+def _make_members() -> list[ClusterMember]:
+    return [
+        ClusterMember(cluster_label=0, canonical_vendor_name="VENDOR_A",
+                      vendor_total_spend=200_000.0, categories_supplied="IT"),
+        ClusterMember(cluster_label=0, canonical_vendor_name="VENDOR_B",
+                      vendor_total_spend=150_000.0, categories_supplied="IT,Logistics"),
+        ClusterMember(cluster_label=1, canonical_vendor_name="VENDOR_C",
+                      vendor_total_spend=120_000.0, categories_supplied="Logistics"),
+    ]
 
 
 def _make_flags() -> list[AnomalyFlag]:
@@ -91,13 +93,13 @@ def _make_flags() -> list[AnomalyFlag]:
     ]
 
 
-def _make_mapping_df() -> pd.DataFrame:
-    return pd.DataFrame([
-        {"RawVendorName": "ACME LTD",  "CanonicalVendorName": "ACME",
-         "MatchScore": 100, "MatchMethod": "EXACT", "ResolutionRunId": 0},
-        {"RawVendorName": "ACME CORP", "CanonicalVendorName": "ACME",
-         "MatchScore": 92,  "MatchMethod": "FUZZY_WRATIO", "ResolutionRunId": 0},
-    ])
+def _make_mapping() -> list[VendorMapping]:
+    return [
+        VendorMapping(raw_vendor_name="ACME LTD",  canonical_vendor_name="ACME",
+                      match_score=100.0, match_method="EXACT",        resolution_run_id=0),
+        VendorMapping(raw_vendor_name="ACME CORP", canonical_vendor_name="ACME",
+                      match_score=92.0,  match_method="FUZZY_WRATIO", resolution_run_id=0),
+    ]
 
 
 def _make_raw_df() -> pd.DataFrame:
@@ -123,9 +125,9 @@ def written_workbook(tmp_path) -> Path:
             "cluster_count": 2,
         }
         writer.write_summary(stats, _make_raw_df())
-        writer.write_entity_resolution(_make_mapping_df())
+        writer.write_entity_resolution(_make_mapping())
         writer.write_vendor_scores(_make_scores())
-        writer.write_consolidation(_make_clusters_df(), _make_members_df())
+        writer.write_consolidation(_make_clusters(), _make_members())
         writer.write_anomaly_flags(_make_flags())
     return path
 
@@ -207,7 +209,7 @@ class TestExcelWriter:
         """ExcelWriter closes cleanly when used as a context manager."""
         path = tmp_path / "test.xlsx"
         with ExcelWriter(path) as writer:
-            writer.write_entity_resolution(_make_mapping_df())
+            writer.write_entity_resolution(_make_mapping())
         # File should be readable after context exit
         wb = openpyxl.load_workbook(path)
         assert "Entity_Resolution" in wb.sheetnames
