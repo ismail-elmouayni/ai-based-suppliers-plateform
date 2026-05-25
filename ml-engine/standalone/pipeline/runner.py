@@ -182,7 +182,7 @@ class StandalonePipeline:
             )
         return df
 
-    def _score_vendors(self, raw_df: pd.DataFrame) -> pd.DataFrame:
+    def _score_vendors(self, raw_df: pd.DataFrame) -> list:
         scores_df = self.scorer.score(raw_df, run_id=0)
         logger.info("  Scored %d vendor+category pairs.", len(scores_df))
         return scores_df

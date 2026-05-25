@@ -20,6 +20,9 @@ import pandas as pd
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 
+from vendor_scoring.vendor_score import VendorScore
+from data_source_columns import DataSourceColumns
+
 logger = logging.getLogger(__name__)
 
 
@@ -187,10 +190,27 @@ class DataRepository:
     # Write vendor scores
     # ------------------------------------------------------------------
 
-    def write_vendor_scores(self, scores_df: pd.DataFrame) -> None:
-        if scores_df.empty:
+    def write_vendor_scores(self, scores: list[VendorScore]) -> None:
+        if not scores:
             return
-        scores_df.to_sql(
+        rows = [
+            {
+                "RunId":                          s.run_id,
+                DataSourceColumns.CANONICAL_VENDOR: s.canonical_vendor_name,
+                DataSourceColumns.CATEGORY:         s.category,
+                "CompositeScore":                 s.composite_score,
+                "PerformanceBand":                s.performance_band,
+                "SavingPctNorm":                  s.saving_pct_norm,
+                "SpendNorm":                      s.spend_norm,
+                "SpecializationNorm":             s.specialization_norm,
+                "RawAverageSavingPercent":        s.raw_average_saving_percent,
+                "RawTotalSpend":                  s.raw_total_spend,
+                "RawSpecialization":              s.raw_specialization,
+                "RawPurchaseCount":               s.raw_purchase_count,
+            }
+            for s in scores
+        ]
+        pd.DataFrame(rows).to_sql(
             "VendorScores",
             self._engine,
             schema="ai_output",
@@ -198,7 +218,7 @@ class DataRepository:
             index=False,
             chunksize=500,
         )
-        logger.info(f"Wrote {len(scores_df)} vendor score rows.")
+        logger.info(f"Wrote {len(scores)} vendor score rows.")
 
     # ------------------------------------------------------------------
     # Write consolidation results

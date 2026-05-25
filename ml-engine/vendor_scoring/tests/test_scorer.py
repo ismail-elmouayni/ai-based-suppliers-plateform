@@ -5,7 +5,8 @@ import numpy as np
 
 from config_types import VendorScoringConfig
 from data_source_columns import DataSourceColumns
-from vendor_scoring.scorer import PerformanceBand, VendorScorer
+from vendor_scoring.scorer import VendorScorer
+from vendor_scoring.vendor_score import PerformanceBand, VendorScore
 
 BASE_CFG = VendorScoringConfig(
     saving_pct_weight=0.50,
@@ -42,9 +43,9 @@ class TestVendorScorer:
         """All composite scores must be in [0, 100]."""
         df = make_df([("VENDOR A", "IT"), ("VENDOR B", "IT"), ("VENDOR C", "Logistics")])
         result = self.scorer.score(df, run_id=1)
-        scored = result[result["PerformanceBand"] != PerformanceBand.INSUFFICIENT]
-        assert (scored["CompositeScore"] >= 0).all()
-        assert (scored["CompositeScore"] <= 100).all()
+        scored = [s for s in result if s.performance_band != PerformanceBand.INSUFFICIENT]
+        assert all(s.composite_score >= 0 for s in scored)
+        assert all(s.composite_score <= 100 for s in scored)
 
     def test_band_green(self):
         """Vendor with best metrics should receive GREEN band."""
@@ -55,7 +56,7 @@ class TestVendorScorer:
                 rows.append({DataSourceColumns.CANONICAL_VENDOR: v, DataSourceColumns.CATEGORY: "IT", DataSourceColumns.SAVING_PERCENT: sp, DataSourceColumns.SPEND: spend, DataSourceColumns.PURCHASE_ORDERS_NUMBER: f"PO-{v}-{i}"})
         df = pd.DataFrame(rows)
         result = self.scorer.score(df, run_id=1)
-        best = result[result[DataSourceColumns.CANONICAL_VENDOR] == "BEST"]["PerformanceBand"].iloc[0]
+        best = next(s.performance_band for s in result if s.canonical_vendor_name == "BEST")
         assert best == PerformanceBand.GREEN
 
     def test_band_red(self):
@@ -66,14 +67,14 @@ class TestVendorScorer:
                 rows.append({DataSourceColumns.CANONICAL_VENDOR: v, DataSourceColumns.CATEGORY: "IT", DataSourceColumns.SAVING_PERCENT: sp, DataSourceColumns.SPEND: spend, DataSourceColumns.PURCHASE_ORDERS_NUMBER: f"PO-{v}-{i}"})
         df = pd.DataFrame(rows)
         result = self.scorer.score(df, run_id=1)
-        poor = result[result[DataSourceColumns.CANONICAL_VENDOR] == "POOR"]["PerformanceBand"].iloc[0]
+        poor = next(s.performance_band for s in result if s.canonical_vendor_name == "POOR")
         assert poor == PerformanceBand.RED
 
     def test_insufficient_data_below_min_po(self):
         """Vendor-category pairs with < min_purchase_count should be INSUFFICIENT_DATA."""
         df = make_df([("VENDOR A", "IT")], n_po=2)  # 2 < 3
         result = self.scorer.score(df, run_id=1)
-        assert (result["PerformanceBand"] == PerformanceBand.INSUFFICIENT).all()
+        assert all(s.performance_band == PerformanceBand.INSUFFICIENT for s in result)
 
     def test_weight_change_changes_score(self):
         """Changing weights should produce different composite scores."""
@@ -102,7 +103,7 @@ class TestVendorScorer:
             rows.append({DataSourceColumns.CANONICAL_VENDOR: "V1", DataSourceColumns.CATEGORY: None, DataSourceColumns.SAVING_PERCENT: 0.5, DataSourceColumns.SPEND: 10000, DataSourceColumns.PURCHASE_ORDERS_NUMBER: f"PO-{i}"})
         df = pd.DataFrame(rows)
         result = self.scorer.score(df, run_id=1)
-        assert result.empty
+        assert not result
 
     def test_specialization_sums_to_1_per_vendor(self):
         """RawSpecialization across all categories for one vendor sums to 1.0."""
@@ -118,14 +119,17 @@ class TestVendorScorer:
                 })
         df = pd.DataFrame(rows)
         result = self.scorer.score(df, run_id=1)
-        total_spec = result[result[DataSourceColumns.CANONICAL_VENDOR] == "VENDOR A"]["RawSpecialization"].sum()
+        total_spec = sum(s.raw_specialization for s in result if s.canonical_vendor_name == "VENDOR A")
         assert abs(total_spec - 1.0) < 1e-6
 
-    def test_output_columns(self):
-        """Output DataFrame has all required columns."""
+    def test_output_structure(self):
+        """score() returns a list of VendorScore instances with all fields populated."""
         df = make_df([("V1", "Cat1"), ("V2", "Cat1")])
         result = self.scorer.score(df, run_id=99)
-        required = {"RunId", DataSourceColumns.CANONICAL_VENDOR, DataSourceColumns.CATEGORY, "CompositeScore",
-                    "PerformanceBand", "SavingPctNorm", "SpendNorm", "SpecializationNorm",
-                    "RawSavingPct", "RawTotalSpend", "RawSpecialization", "PurchaseCount"}
-        assert required.issubset(set(result.columns))
+        assert isinstance(result, list)
+        assert all(isinstance(s, VendorScore) for s in result)
+        vs = result[0]
+        assert vs.run_id == 99
+        assert vs.canonical_vendor_name is not None
+        assert vs.category is not None
+        assert 0.0 <= vs.composite_score <= 100.0

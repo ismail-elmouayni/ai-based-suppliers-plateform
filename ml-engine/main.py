@@ -94,8 +94,8 @@ class Pipeline:
 
             # 5. Vendor scoring
             logger.info("Step 4/7: Running vendor scoring...")
-            scores_df = self.scorer.score(raw_df, run_id=run_id)
-            self.repo.write_vendor_scores(scores_df)
+            scores = self.scorer.score(raw_df, run_id=run_id)
+            self.repo.write_vendor_scores(scores)
 
             # 6. Consolidation clustering
             logger.info("Step 5/7: Running consolidation clustering...")

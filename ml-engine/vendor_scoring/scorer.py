@@ -10,26 +10,16 @@ For each (CanonicalVendorName, Category) pair with ≥ min_purchase_count purcha
 
 from __future__ import annotations
 import logging
-from enum import StrEnum
 
 import numpy as np
 import pandas as pd
 
 from config_types import VendorScoringConfig
+from core.raw_data_processing import RawDataProcessing
 from data_source_columns import DataSourceColumns
+from vendor_scoring.vendor_score import PerformanceBand, VendorScore
 
 logger = logging.getLogger(__name__)
-
-
-class PerformanceBand(StrEnum):
-    """Vendor performance bands.  ``StrEnum`` guarantees ``str(member) == member.value``
-    across all Python versions — backward-compatible with DB writes and tests."""
-
-    GREEN        = "GREEN"
-    AMBER        = "AMBER"
-    RED          = "RED"
-    INSUFFICIENT = "INSUFFICIENT_DATA"
-
 
 
 class VendorScorer:
@@ -37,7 +27,7 @@ class VendorScorer:
         self.saving_weight          = config.saving_pct_weight
         self.spend_weight           = config.spend_weight
         self.specialization_weight  = config.specialization_weight
-        self.min_purchase_count       = config.min_purchase_count
+        self.min_purchase_count     = config.min_purchase_count
         self.band_green_min         = config.band_green_min
         self.band_amber_min         = config.band_amber_min
 
@@ -63,7 +53,7 @@ class VendorScorer:
         return PerformanceBand.RED
 
 
-    def score(self, data_frame: pd.DataFrame, run_id: int) -> pd.DataFrame:
+    def score(self, data_frame: pd.DataFrame, run_id: int) -> list[VendorScore]:
         """
         Score vendors from *data_frame*.
 
@@ -73,103 +63,78 @@ class VendorScorer:
         """
         if data_frame.empty:
             logger.warning("score() called with empty DataFrame.")
-            return pd.DataFrame()
+            return []
 
-        # Drop rows with NULL / None / "NULL" Category
-        data_frame = data_frame[data_frame[DataSourceColumns.CATEGORY].notna()].copy()
-        null_sentinels = {"NULL", "None", "nan", ""}
-        data_frame = data_frame[~data_frame[DataSourceColumns.CATEGORY].astype(str).isin(null_sentinels)].copy()
-
+        data_frame = RawDataProcessing.drop_null_column(data_frame, DataSourceColumns.CATEGORY)
         if data_frame.empty:
             logger.warning("No scoreable rows after filtering NULL categories.")
-            return pd.DataFrame()
+            return []
 
-        # --- Raw signals per (vendor, category) -----------------------
-        agg = (
-            data_frame.groupby([DataSourceColumns.CANONICAL_VENDOR, DataSourceColumns.CATEGORY])
-            .agg(
-                RawSavingPct=(DataSourceColumns.SAVING_PERCENT, "mean"),
-                RawTotalSpend=(DataSourceColumns.SPEND, "sum"),
-                PurchaseCount=(DataSourceColumns.PURCHASE_ORDERS_NUMBER, "count"),
-            )
-            .reset_index()
-        )
+        aggregatedRawData = (
+                data_frame.groupby([DataSourceColumns.CANONICAL_VENDOR, DataSourceColumns.CATEGORY])
+                          .agg(**{  
+                                    VendorScore.RAW_AVERAGE_SAVING_PERCENT: (DataSourceColumns.SAVING_PERCENT, "mean"),
+                                    VendorScore.RAW_TOTAL_SPEND:            (DataSourceColumns.SPEND, "sum"),
+                                    VendorScore.RAW_PURCHASE_COUNT:         (DataSourceColumns.PURCHASE_ORDERS_NUMBER, "count"),
+                                })
+                            .reset_index())
 
-        # Specialization: vendor's spend in category / vendor's total spend
-        vendor_total = data_frame.groupby(DataSourceColumns.CANONICAL_VENDOR)[DataSourceColumns.SPEND].sum().rename("VendorTotalSpend")
-        agg = agg.join(vendor_total, on=DataSourceColumns.CANONICAL_VENDOR)
-        agg["RawSpecialization"] = (
-            agg["RawTotalSpend"] / agg["VendorTotalSpend"].replace(0, np.nan)
+        # cross categories vendor total spend
+        vendor_total_spend = data_frame.groupby(DataSourceColumns.CANONICAL_VENDOR)[DataSourceColumns.SPEND].sum().rename("vendor_total_spend")
+        aggregatedRawData = aggregatedRawData.join(vendor_total_spend, on=DataSourceColumns.CANONICAL_VENDOR)
+        
+        aggregatedRawData[VendorScore.RAW_SPECIALIZATION] = (
+            aggregatedRawData[VendorScore.RAW_TOTAL_SPEND] / aggregatedRawData["vendor_total_spend"].replace(0, np.nan)
         ).fillna(0.0)
 
-        # Fill NaN saving pcts with 0
-        agg["RawSavingPct"] = agg["RawSavingPct"].fillna(0.0)
+        aggregatedRawData[VendorScore.RAW_AVERAGE_SAVING_PERCENT] = aggregatedRawData[VendorScore.RAW_AVERAGE_SAVING_PERCENT].fillna(0.0)
 
         # --- Scoreable subset -----------------------------------------
-        scoreable = agg[agg["PurchaseCount"] >= self.min_purchase_count].copy()
-        insufficient = agg[agg["PurchaseCount"] < self.min_purchase_count].copy()
+        valid_vendors                   = aggregatedRawData[aggregatedRawData[VendorScore.RAW_PURCHASE_COUNT] >= self.min_purchase_count].copy()
+        vendors_with_insufficient_po    = aggregatedRawData[aggregatedRawData[VendorScore.RAW_PURCHASE_COUNT] < self.min_purchase_count].copy()
 
-        rows = []
+        rows: list[VendorScore] = []
 
-        if not scoreable.empty:
-            # Min-max normalise
-            scoreable["SavingPctNorm"] = self._normalize(scoreable["RawSavingPct"])
-            scoreable["SpendNorm"] = self._normalize(scoreable["RawTotalSpend"])
-            scoreable["SpecializationNorm"] = self._normalize(scoreable["RawSpecialization"])
+        if not valid_vendors.empty:
+            valid_vendors[VendorScore.SAVING_PERCENT_NORM]  = self._normalize(valid_vendors[VendorScore.RAW_AVERAGE_SAVING_PERCENT])
+            valid_vendors[VendorScore.SPEND_NORM]           = self._normalize(valid_vendors[VendorScore.RAW_TOTAL_SPEND])
+            valid_vendors[VendorScore.SPECIALIZATION_NORM]  = self._normalize(valid_vendors[VendorScore.RAW_SPECIALIZATION])
 
-            scoreable["CompositeScore"] = (
-                scoreable["SavingPctNorm"] * self.saving_weight
-                + scoreable["SpendNorm"] * self.spend_weight
-                + scoreable["SpecializationNorm"] * self.specialization_weight
+            valid_vendors[VendorScore.COMPOSITE_SCORE] = (
+                valid_vendors[VendorScore.SAVING_PERCENT_NORM] * self.saving_weight
+                + valid_vendors[VendorScore.SPEND_NORM] * self.spend_weight
+                + valid_vendors[VendorScore.SPECIALIZATION_NORM] * self.specialization_weight
             ) * 100.0
 
-            scoreable["CompositeScore"] = scoreable["CompositeScore"].round(2).clip(0, 100)
-            scoreable["PerformanceBand"] = scoreable.apply(
-                lambda r: self._assign_performance_band(r["CompositeScore"], r["PurchaseCount"]), axis=1
+            valid_vendors[VendorScore.COMPOSITE_SCORE] = valid_vendors[VendorScore.COMPOSITE_SCORE].round(2).clip(0, 100)
+            valid_vendors[VendorScore.PERFORMANCE_BAND] = valid_vendors.apply(
+                lambda r: self._assign_performance_band(r[VendorScore.COMPOSITE_SCORE], r[VendorScore.RAW_PURCHASE_COUNT]), axis=1
             )
 
-            for _, row in scoreable.iterrows():
-                rows.append(self._to_output_row(row, run_id))
+            for _, row in valid_vendors.iterrows():
+                rows.append(VendorScore.from_series(run_id, row))
 
         # Insufficient data rows
-        for _, row in insufficient.iterrows():
-            rows.append(
-                {
-                    "RunId": run_id,
-                    DataSourceColumns.CANONICAL_VENDOR: row[DataSourceColumns.CANONICAL_VENDOR],
-                    DataSourceColumns.CATEGORY: row[DataSourceColumns.CATEGORY],
-                    "CompositeScore": 0.0,
-                    "PerformanceBand": PerformanceBand.INSUFFICIENT,
-                    "SavingPctNorm": None,
-                    "SpendNorm": None,
-                    "SpecializationNorm": None,
-                    "RawSavingPct": row["RawSavingPct"],
-                    "RawTotalSpend": row["RawTotalSpend"],
-                    "RawSpecialization": row["RawSpecialization"],
-                    "PurchaseCount": int(row["PurchaseCount"]),
-                }
-            )
+        for _, row in vendors_with_insufficient_po.iterrows():
+            rows.append(VendorScore(
+                run_id=run_id,
+                canonical_vendor_name=row[DataSourceColumns.CANONICAL_VENDOR],
+                category=row[DataSourceColumns.CATEGORY],
+                composite_score=0.0,
+                performance_band=PerformanceBand.INSUFFICIENT,
+                saving_pct_norm=None,
+                spend_norm=None,
+                specialization_norm=None,
+                raw_average_saving_percent=float(row[VendorScore.RAW_AVERAGE_SAVING_PERCENT]),
+                raw_total_spend=float(row[VendorScore.RAW_TOTAL_SPEND]),
+                raw_specialization=float(row[VendorScore.RAW_SPECIALIZATION]),
+                raw_purchase_count=int(row[VendorScore.RAW_PURCHASE_COUNT]),
+            ))
 
-        result = pd.DataFrame(rows)
         logger.info(
-            f"Scoring complete: {len(scoreable)} scored, "
-            f"{len(insufficient)} insufficient_data pairs."
+            f"Scoring complete: {len(valid_vendors)} scored, "
+            f"{len(vendors_with_insufficient_po)} insufficient_data pairs."
         )
-        return result
+        return rows
 
-    @staticmethod
-    def _to_output_row(row: pd.Series, run_id: int) -> dict:
-        return {
-            "RunId": run_id,
-            DataSourceColumns.CANONICAL_VENDOR: row[DataSourceColumns.CANONICAL_VENDOR],
-            DataSourceColumns.CATEGORY: row[DataSourceColumns.CATEGORY],
-            "CompositeScore": float(row["CompositeScore"]),
-            "PerformanceBand": row["PerformanceBand"],
-            "SavingPctNorm": float(row["SavingPctNorm"]),
-            "SpendNorm": float(row["SpendNorm"]),
-            "SpecializationNorm": float(row["SpecializationNorm"]),
-            "RawSavingPct": float(row["RawSavingPct"]),
-            "RawTotalSpend": float(row["RawTotalSpend"]),
-            "RawSpecialization": float(row["RawSpecialization"]),
-            "PurchaseCount": int(row["PurchaseCount"]),
-        }
+

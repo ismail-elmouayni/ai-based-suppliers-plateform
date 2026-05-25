@@ -33,6 +33,8 @@ from pathlib import Path
 from typing import Any, Union
 
 import pandas as pd
+
+from vendor_scoring.vendor_score import VendorScore
 import xlsxwriter
 from xlsxwriter.workbook import Workbook
 from xlsxwriter.worksheet import Worksheet
@@ -187,25 +189,36 @@ class ExcelWriter:
         ]
         self._write_table(ws, mapping_df, columns)
 
-    def write_vendor_scores(self, scores_df: pd.DataFrame) -> None:
+    def write_vendor_scores(self, scores: list[VendorScore]) -> None:
         """Write the Vendor_Scores sheet with a horizontal bar chart."""
         ws = self._wb.add_worksheet("Vendor_Scores")
         ws.set_zoom(90)
         ws.freeze_panes(1, 0)
 
         columns = [
-            ("CanonicalVendorName", 30),
-            ("Category",            20),
-            ("CompositeScore",      16),
-            ("PerformanceBand",     18),
-            ("RawSavingPct",        16),
-            ("RawTotalSpend",       16),
-            ("RawSpecialization",   18),
-            ("POCount",             10),
+            ("CanonicalVendorName",      30),
+            ("Category",                 20),
+            ("CompositeScore",           16),
+            ("PerformanceBand",          18),
+            ("RawAverageSavingPercent",  16),
+            ("RawTotalSpend",            16),
+            ("RawSpecialization",        18),
+            ("RawPurchaseCount",         10),
         ]
 
-        # Sort by score descending before writing
-        df = scores_df.sort_values("CompositeScore", ascending=False).reset_index(drop=True)
+        df = pd.DataFrame([
+            {
+                "CanonicalVendorName":     s.canonical_vendor_name,
+                "Category":                s.category,
+                "CompositeScore":          s.composite_score,
+                "PerformanceBand":         s.performance_band,
+                "RawAverageSavingPercent": s.raw_average_saving_percent,
+                "RawTotalSpend":           s.raw_total_spend,
+                "RawSpecialization":       s.raw_specialization,
+                "RawPurchaseCount":        s.raw_purchase_count,
+            }
+            for s in scores
+        ]).sort_values("CompositeScore", ascending=False).reset_index(drop=True)
         self._write_table(ws, df, columns, band_col="PerformanceBand")
 
         # ── Horizontal bar chart (top 20 by score) ────────────────────
