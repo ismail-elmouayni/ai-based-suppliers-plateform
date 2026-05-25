@@ -19,6 +19,12 @@ import numpy as np
 import pandas as pd
 import pytest
 
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+
+from data_source_columns import DataSourceColumns
+
 
 # ---------------------------------------------------------------------------
 # Config
@@ -40,7 +46,7 @@ def config() -> dict:
             "saving_pct_weight": 0.50,
             "spend_weight": 0.30,
             "specialization_weight": 0.20,
-            "min_po_count_for_scoring": 3,
+            "min_purchase_count_for_scoring": 3,
             "band_green_min": 70,
             "band_amber_min": 40,
         },
@@ -87,32 +93,32 @@ def _build_sample_df() -> pd.DataFrame:
     po_counter = 0
 
     for vendor, category in vendors:
-        n_pos = rng.randint(4, 9)  # 4–8 POs per vendor (>= min_po_count_for_scoring=3)
+        n_pos = rng.randint(4, 9)  # 4–8 POs per vendor (>= min_purchase_count_for_scoring=3)
         for _ in range(n_pos):
             original_spend = rng.uniform(10_000, 200_000)
             spend = original_spend * rng.uniform(0.90, 1.10)
             saving = original_spend - spend
             saving_pct = saving / original_spend if original_spend else 0.0
             rows.append({
-                "Id":               po_counter + 1,
-                "Country":          rng.choice(["FR", "DE", "MA", "US"]),
-                "Vendor":           vendor,
-                "Category":         category,
-                "PO_Number":        f"PO-{po_counter:04d}",
-                "Item_Description": f"Item for {category}",
-                "Original_Spend":   round(original_spend, 2),
-                "OPEX_CAPEX":       rng.choice(["OPEX", "CAPEX"]),
-                "Saving":           round(saving, 2),
-                "Saving_Pct":       round(saving_pct, 4),
-                "Spend":            round(spend, 2),
+                DataSourceColumns.ID:               po_counter + 1,
+                DataSourceColumns.COUNTRY:          rng.choice(["FR", "DE", "MA", "US"]),
+                DataSourceColumns.VENDOR:           vendor,
+                DataSourceColumns.CATEGORY:         category,
+                DataSourceColumns.PURCHASE_ORDERS_NUMBER:        f"PO-{po_counter:04d}",
+                DataSourceColumns.ITEM_DESCRIPTION: f"Item for {category}",
+                DataSourceColumns.ORIGINAL_SPEND:   round(original_spend, 2),
+                DataSourceColumns.OPEX_CAPEX:       rng.choice(["OPEX", "CAPEX"]),
+                DataSourceColumns.SAVING:           round(saving, 2),
+                DataSourceColumns.SAVING_PERCENT:       round(saving_pct, 4),
+                DataSourceColumns.SPEND:            round(spend, 2),
             })
             po_counter += 1
 
     df = pd.DataFrame(rows)
 
     # Inject two obvious anomalies (spend >> original_spend)
-    df.loc[0, "Spend"] = df.loc[0, "Original_Spend"] * 4.0   # HIGH anomaly
-    df.loc[1, "Spend"] = df.loc[1, "Original_Spend"] * 3.0   # MEDIUM-ish anomaly
+    df.loc[0, DataSourceColumns.SPEND] = df.loc[0, DataSourceColumns.ORIGINAL_SPEND] * 4.0   # HIGH anomaly
+    df.loc[1, DataSourceColumns.SPEND] = df.loc[1, DataSourceColumns.ORIGINAL_SPEND] * 3.0   # MEDIUM-ish anomaly
 
     return df
 

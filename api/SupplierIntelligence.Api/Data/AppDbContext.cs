@@ -37,7 +37,7 @@ public class AppDbContext : DbContext
             e.Property(p => p.RawSavingPct).HasColumnName("RawSavingPct");
             e.Property(p => p.RawTotalSpend).HasColumnName("RawTotalSpend");
             e.Property(p => p.RawSpecialization).HasColumnName("RawSpecialization");
-            e.Property(p => p.POCount).HasColumnName("POCount");
+            e.Property(p => p.PurchaseCount).HasColumnName("PurchaseCount");
             e.Property(p => p.CreatedAt).HasColumnName("CreatedAt");
         });
 

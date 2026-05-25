@@ -15,50 +15,60 @@ Steps:
 from __future__ import annotations
 
 import logging
-from typing import Tuple
 
 import numpy as np
 import pandas as pd
 from sklearn.cluster import KMeans, DBSCAN
 from sklearn.preprocessing import StandardScaler
 
+from config_types import ConsolidationConfig
+from consolidation.cluster_result import ClusterMember, ClusteringResult, ConsolidationCluster
+from core.raw_data_processing import RawDataProcessing
+from data_source_columns import DataSourceColumns
+
 logger = logging.getLogger(__name__)
 
+# the minimal number of cluster to make kMeans method useful.
+kmean_min_cluster_size: int = 10
 
 class VendorClusterer:
-    def __init__(self, config: dict):
-        c_cfg = config.get("consolidation", {})
-        self.min_cluster_size: int = int(c_cfg.get("min_cluster_size", 2))
-        self.algorithm: str = str(c_cfg.get("algorithm", "kmeans")).lower()
-        self.n_clusters = c_cfg.get("n_clusters", "auto")
-        self.dbscan_eps: float = float(c_cfg.get("dbscan_eps", 0.5))
-        self.dbscan_min_samples: int = int(c_cfg.get("dbscan_min_samples", 2))
+    def __init__(self, cfg: ConsolidationConfig) -> None:
+        self.min_cluster_size: int   = cfg.min_cluster_size
+        self.algorithm: str          = cfg.algorithm
+        self.n_clusters              = cfg.n_clusters
+        self.dbscan_eps: float       = cfg.dbscan_eps
+        self.dbscan_min_samples: int = cfg.dbscan_min_samples
 
     # ------------------------------------------------------------------
     # Elbow method
     # ------------------------------------------------------------------
 
-    def _auto_k(self, X: np.ndarray) -> int:
+    def _auto_k(self, scaled_matrix: np.ndarray) -> int:
         """Pick k using the elbow method (inertia reduction < 15%)."""
-        max_k = min(10, len(X) - 1)
-        if max_k < 2:
-            return max(1, len(X))
 
-        inertias = []
-        ks = list(range(2, max_k + 1))
-        for k in ks:
-            km = KMeans(n_clusters=k, random_state=42, n_init=10)
-            km.fit(X)
-            inertias.append(km.inertia_)
+        max_clusters = min(kmean_min_cluster_size, len(scaled_matrix) - 1)
+        if max_clusters < 2:
+            return max(1, len(scaled_matrix))
 
-        # Pick first k where reduction from previous < 15%
-        for i in range(1, len(inertias)):
-            reduction = (inertias[i - 1] - inertias[i]) / (inertias[i - 1] + 1e-9)
-            if reduction < 0.15:
-                return ks[i - 1]
+        inertia_per_k = []
+        candidate_k_values = list(range(2, max_clusters + 1))
+
+        for n_clusters in candidate_k_values:
+            kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
+            kmeans.fit(scaled_matrix)
+            inertia_per_k.append(kmeans.inertia_)
+
+        # Pick first k where inertia reduction from the previous k is < 15% (elbow point)
+        for k_index in range(1, len(inertia_per_k)):
+            inertia_reduction_ratio = (
+                (inertia_per_k[k_index - 1] - inertia_per_k[k_index])
+                / (inertia_per_k[k_index - 1] + 1e-9)
+            )
+            if inertia_reduction_ratio < 0.15:
+                return candidate_k_values[k_index - 1]
 
         # Fallback: min(8, n_vendors // 5)
-        return min(8, max(2, len(X) // 5))
+        return min(8, max(2, len(scaled_matrix) // 5))
 
     # ------------------------------------------------------------------
     # Clustering
@@ -76,29 +86,27 @@ class VendorClusterer:
     # Public API
     # ------------------------------------------------------------------
 
-    def cluster(self, df: pd.DataFrame, run_id: int) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    def cluster(self, df: pd.DataFrame, run_id: int) -> ClusteringResult:
         """
         Cluster vendors by spend pattern.
 
         Required columns: CanonicalVendorName, Category, Spend, Saving_Pct.
-        Returns (clusters_df, members_df) ready for DataRepository.write_consolidation().
+        Returns (clusters, members) as typed domain object lists.
         """
         if df.empty:
             logger.warning("cluster() called with empty DataFrame.")
-            return pd.DataFrame(), pd.DataFrame()
+            return ClusteringResult(clusters=[], members=[])
 
         # Filter NULL categories
-        df = df[df["Category"].notna()].copy()
-        null_sentinels = {"NULL", "None", "nan", ""}
-        df = df[~df["Category"].astype(str).isin(null_sentinels)].copy()
+        df = RawDataProcessing.drop_null_column(df, DataSourceColumns.CATEGORY)
 
-        if df.empty or df["CanonicalVendorName"].nunique() < 2:
+        if df.empty or df[DataSourceColumns.CANONICAL_VENDOR].nunique() < 2:
             logger.warning("Not enough vendors to cluster after filtering.")
-            return pd.DataFrame(), pd.DataFrame()
+            return ClusteringResult(clusters=[], members=[])
 
         # Vendor × category spend pivot
         pivot = (
-            df.groupby(["CanonicalVendorName", "Category"])["Spend"]
+            df.groupby([DataSourceColumns.CANONICAL_VENDOR, DataSourceColumns.CATEGORY])[DataSourceColumns.SPEND]
             .sum()
             .unstack(fill_value=0.0)
         )
@@ -124,20 +132,20 @@ class VendorClusterer:
 
         # Vendor-level info
         vendor_total_spend = (
-            df.groupby("CanonicalVendorName")["Spend"].sum().reindex(vendors).fillna(0)
+            df.groupby(DataSourceColumns.CANONICAL_VENDOR)[DataSourceColumns.SPEND].sum().reindex(vendors).fillna(0)
         )
         vendor_saving_pct = (
-            df.groupby("CanonicalVendorName")["Saving_Pct"].mean().reindex(vendors).fillna(0)
+            df.groupby(DataSourceColumns.CANONICAL_VENDOR)[DataSourceColumns.SAVING_PERCENT].mean().reindex(vendors).fillna(0)
         )
         vendor_categories = (
-            df.groupby("CanonicalVendorName")["Category"]
+            df.groupby(DataSourceColumns.CANONICAL_VENDOR)[DataSourceColumns.CATEGORY]
             .apply(lambda x: ", ".join(sorted(x.unique())))
             .reindex(vendors)
             .fillna("")
         )
 
-        cluster_rows = []
-        member_rows = []
+        cluster_rows: list[ConsolidationCluster] = []
+        member_rows: list[ClusterMember] = []
 
         for label in set(labels):
             if label == -1:  # DBSCAN noise
@@ -167,32 +175,29 @@ class VendorClusterer:
             est_saving_amount = total_spend * est_saving_pct
 
             cluster_rows.append(
-                {
-                    "RunId": run_id,
-                    "ClusterLabel": int(label),
-                    "DominantCategory": dominant_cat,
-                    "VendorCount": len(cluster_vendors),
-                    "TotalSpendAtStake": total_spend,
-                    "EstimatedSavingPct": round(est_saving_pct, 6),
-                    "EstimatedSavingAmount": round(est_saving_amount, 2),
-                }
+                ConsolidationCluster(
+                    run_id=run_id,
+                    cluster_label=int(label),
+                    dominant_category=dominant_cat,
+                    vendor_count=len(cluster_vendors),
+                    total_spend_at_stake=total_spend,
+                    estimated_saving_pct=round(est_saving_pct, 6),
+                    estimated_saving_amount=round(est_saving_amount, 2),
+                )
             )
 
             for v in cluster_vendors:
                 member_rows.append(
-                    {
-                        "ClusterLabel": int(label),
-                        "CanonicalVendorName": v,
-                        "VendorTotalSpend": float(vendor_total_spend.get(v, 0)),
-                        "CategoriesSupplied": str(vendor_categories.get(v, "")),
-                    }
+                    ClusterMember(
+                        cluster_label=int(label),
+                        canonical_vendor_name=v,
+                        vendor_total_spend=float(vendor_total_spend.get(v, 0)),
+                        categories_supplied=str(vendor_categories.get(v, "")),
+                    )
                 )
 
-        clusters_df = pd.DataFrame(cluster_rows)
-        members_df = pd.DataFrame(member_rows)
-
         logger.info(
-            f"Clustering complete: {len(clusters_df)} clusters with ≥ "
+            f"Clustering complete: {len(cluster_rows)} clusters with ≥ "
             f"{self.min_cluster_size} vendors."
         )
-        return clusters_df, members_df
+        return ClusteringResult(clusters=cluster_rows, members=member_rows)

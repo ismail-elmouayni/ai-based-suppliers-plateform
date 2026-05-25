@@ -16,16 +16,23 @@ import sys
 import threading
 import time
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Any, Optional
 
 import yaml
 from flask import Flask, jsonify, request
 
 from db.repository import DataRepository
-from entity_resolution.resolver import VendorResolver
-from vendor_scoring.scorer import VendorScorer
-from consolidation.clusterer import VendorClusterer
-from anomaly_detection.detector import AnomalyDetector
+from entity_resolution.vendor_resolver import VendorResolver
+from vendor_scoring.vendor_scorer import VendorScorer
+from consolidation.vendor_clusterer import VendorClusterer
+from anomaly_detection.anomaly_detector import AnomalyDetector
+from config_types import (
+    AnomalyConfig,
+    ConsolidationConfig,
+    EntityResolutionConfig,
+    VendorScoringConfig,
+)
+from data_source_columns import DataSourceColumns
 
 logging.basicConfig(
     level=logging.INFO,
@@ -40,7 +47,7 @@ CONFIG_PATH = os.getenv("MODEL_CONFIG_PATH", "/config/model_config.yml")
 # Config loader
 # ---------------------------------------------------------------------------
 
-def load_config() -> dict:
+def load_config() -> dict[str, Any]:
     with open(CONFIG_PATH, "r") as f:
         return yaml.safe_load(f)
 
@@ -50,13 +57,13 @@ def load_config() -> dict:
 # ---------------------------------------------------------------------------
 
 class Pipeline:
-    def __init__(self, repo: DataRepository, config: dict):
+    def __init__(self, repo: DataRepository, config: dict[str, Any]) -> None:
         self.repo = repo
         self.config = config
-        self.resolver = VendorResolver(config)
-        self.scorer = VendorScorer(config)
-        self.clusterer = VendorClusterer(config)
-        self.detector = AnomalyDetector(config)
+        self.resolver  = VendorResolver(EntityResolutionConfig.from_dict(config))
+        self.scorer    = VendorScorer(VendorScoringConfig.from_dict(config))
+        self.clusterer = VendorClusterer(ConsolidationConfig.from_dict(config))
+        self.detector  = AnomalyDetector(config)
 
     def run(self, run_id: int, triggered_by: str = "SYSTEM") -> None:
         start_ms = int(time.time() * 1000)
@@ -71,34 +78,34 @@ class Pipeline:
 
             # 2. Entity resolution
             logger.info("Step 2/7: Running entity resolution...")
-            mapping_df = self.resolver.resolve(raw_df, run_id=run_id)
-            self.repo.write_resolved_vendors(mapping_df)
+            mappings = self.resolver.resolve(raw_df, run_id=run_id)
+            self.repo.write_resolved_vendors(mappings)
 
             # 3. Attach canonical names to raw data
             logger.info("Step 3/7: Attaching canonical vendor names...")
-            name_map = mapping_df.set_index("RawVendorName")["CanonicalVendorName"].to_dict()
-            raw_df["CanonicalVendorName"] = raw_df["Vendor"].map(name_map).fillna(raw_df["Vendor"])
+            name_map = {m.raw_vendor_name: m.canonical_vendor_name for m in mappings}
+            raw_df[DataSourceColumns.CANONICAL_VENDOR] = raw_df[DataSourceColumns.VENDOR].map(name_map).fillna(raw_df[DataSourceColumns.VENDOR])
 
             # 4. Clean categories (normalise NULL sentinels)
             null_sentinels = {"NULL", "None", "nan", ""}
-            raw_df["Category"] = raw_df["Category"].where(
-                ~raw_df["Category"].astype(str).isin(null_sentinels), other=None
+            raw_df[DataSourceColumns.CATEGORY] = raw_df[DataSourceColumns.CATEGORY].where(
+                ~raw_df[DataSourceColumns.CATEGORY].astype(str).isin(null_sentinels), other=None
             )
 
             # 5. Vendor scoring
             logger.info("Step 4/7: Running vendor scoring...")
-            scores_df = self.scorer.score(raw_df, run_id=run_id)
-            self.repo.write_vendor_scores(scores_df)
+            scores = self.scorer.score(raw_df, run_id=run_id)
+            self.repo.write_vendor_scores(scores)
 
             # 6. Consolidation clustering
             logger.info("Step 5/7: Running consolidation clustering...")
-            clusters_df, members_df = self.clusterer.cluster(raw_df, run_id=run_id)
-            self.repo.write_consolidation(clusters_df, members_df)
+            result = self.clusterer.cluster(raw_df, run_id=run_id)
+            self.repo.write_consolidation(result.clusters, result.members)
 
             # 7. Anomaly detection
             logger.info("Step 6/7: Running anomaly detection...")
-            flags_df = self.detector.detect(raw_df, run_id=run_id)
-            self.repo.write_anomaly_flags(flags_df)
+            flags = self.detector.detect(raw_df, run_id=run_id)
+            self.repo.write_anomaly_flags(flags)
 
             # Update run log COMPLETED
             duration_ms = int(time.time() * 1000) - start_ms

@@ -33,6 +33,11 @@ from pathlib import Path
 from typing import Any, Union
 
 import pandas as pd
+
+from anomaly_detection.anomaly_flag import AnomalyFlag, Severity
+from consolidation.cluster_result import ClusterMember, ConsolidationCluster
+from entity_resolution.vendor_mapping import VendorMapping
+from vendor_scoring.vendor_score import VendorScore
 import xlsxwriter
 from xlsxwriter.workbook import Workbook
 from xlsxwriter.worksheet import Worksheet
@@ -173,7 +178,7 @@ class ExcelWriter:
             chart.set_size({"width": 480, "height": 300})
             ws.insert_chart("B" + str(table_row + data_rows + 3), chart)
 
-    def write_entity_resolution(self, mapping_df: pd.DataFrame) -> None:
+    def write_entity_resolution(self, mappings: list[VendorMapping]) -> None:
         """Write the Entity_Resolution sheet."""
         ws = self._wb.add_worksheet("Entity_Resolution")
         ws.set_zoom(90)
@@ -185,27 +190,53 @@ class ExcelWriter:
             ("MatchScore",         14),
             ("MatchMethod",        18),
         ]
+        mapping_df = pd.DataFrame([
+            {
+                "RawVendorName":      m.raw_vendor_name,
+                "CanonicalVendorName": m.canonical_vendor_name,
+                "MatchScore":         m.match_score,
+                "MatchMethod":        m.match_method,
+            }
+            for m in mappings
+        ])
         self._write_table(ws, mapping_df, columns)
 
-    def write_vendor_scores(self, scores_df: pd.DataFrame) -> None:
+    def write_vendor_scores(self, scores: list[VendorScore]) -> None:
         """Write the Vendor_Scores sheet with a horizontal bar chart."""
         ws = self._wb.add_worksheet("Vendor_Scores")
         ws.set_zoom(90)
         ws.freeze_panes(1, 0)
 
         columns = [
-            ("CanonicalVendorName", 30),
-            ("Category",            20),
-            ("CompositeScore",      16),
-            ("PerformanceBand",     18),
-            ("RawSavingPct",        16),
-            ("RawTotalSpend",       16),
-            ("RawSpecialization",   18),
-            ("POCount",             10),
+            ("CanonicalVendorName",      30),
+            ("Category",                 20),
+            ("CompositeScore",           16),
+            ("PerformanceBand",          18),
+            ("SavingPctNorm",            16),
+            ("SpendNorm",                14),
+            ("SpecializationNorm",       18),
+            ("RawAverageSavingPercent",  22),
+            ("RawTotalSpend",            16),
+            ("RawSpecialization",        18),
+            ("RawPurchaseCount",         14),
         ]
 
-        # Sort by score descending before writing
-        df = scores_df.sort_values("CompositeScore", ascending=False).reset_index(drop=True)
+        df = pd.DataFrame([
+            {
+                "CanonicalVendorName":     s.canonical_vendor_name,
+                "Category":                s.category,
+                "CompositeScore":          s.composite_score,
+                "PerformanceBand":         s.performance_band,
+                "SavingPctNorm":           s.saving_pct_norm,
+                "SpendNorm":               s.spend_norm,
+                "SpecializationNorm":      s.specialization_norm,
+                "RawAverageSavingPercent": s.raw_average_saving_percent,
+                "RawTotalSpend":           s.raw_total_spend,
+                "RawSpecialization":       s.raw_specialization,
+                "RawPurchaseCount":        s.raw_purchase_count,
+            }
+            for s in scores
+        ]).sort_values("CompositeScore", ascending=False).reset_index(drop=True)
         self._write_table(ws, df, columns, band_col="PerformanceBand")
 
         # ── Horizontal bar chart (top 20 by score) ────────────────────
@@ -214,7 +245,7 @@ class ExcelWriter:
             self._write_vendor_score_chart(ws, chart_df, start_row=len(df) + 3)
 
     def write_consolidation(
-        self, clusters_df: pd.DataFrame, members_df: pd.DataFrame
+        self, clusters: list[ConsolidationCluster], members: list[ClusterMember]
     ) -> None:
         """Write Consolidation_Clusters and Consolidation_Members sheets."""
         # ── Clusters ──────────────────────────────────────────────────
@@ -230,11 +261,22 @@ class ExcelWriter:
             ("EstimatedSavingPct",    20),
             ("EstimatedSavingAmount", 22),
         ]
+        clusters_df = pd.DataFrame([
+            {
+                "ClusterLabel":          c.cluster_label,
+                "DominantCategory":      c.dominant_category,
+                "VendorCount":           c.vendor_count,
+                "TotalSpendAtStake":     c.total_spend_at_stake,
+                "EstimatedSavingPct":    c.estimated_saving_pct,
+                "EstimatedSavingAmount": c.estimated_saving_amount,
+            }
+            for c in clusters
+        ])
         self._write_table(ws_c, clusters_df, cluster_cols)
 
         # Bar chart: estimated savings per cluster
-        if not clusters_df.empty:
-            self._write_savings_chart(ws_c, clusters_df, start_row=len(clusters_df) + 3)
+        if clusters:
+            self._write_savings_chart(ws_c, clusters, start_row=len(clusters) + 3)
 
         # ── Members ───────────────────────────────────────────────────
         ws_m = self._wb.add_worksheet("Consolidation_Members")
@@ -247,9 +289,18 @@ class ExcelWriter:
             ("VendorTotalSpend",    18),
             ("CategoriesSupplied",  40),
         ]
+        members_df = pd.DataFrame([
+            {
+                "ClusterLabel":        m.cluster_label,
+                "CanonicalVendorName": m.canonical_vendor_name,
+                "VendorTotalSpend":    m.vendor_total_spend,
+                "CategoriesSupplied":  m.categories_supplied,
+            }
+            for m in members
+        ])
         self._write_table(ws_m, members_df, member_cols)
 
-    def write_anomaly_flags(self, flags_df: pd.DataFrame) -> None:
+    def write_anomaly_flags(self, flags: list[AnomalyFlag]) -> None:
         """Write the Anomaly_Flags sheet with a severity pie chart."""
         ws = self._wb.add_worksheet("Anomaly_Flags")
         ws.set_zoom(90)
@@ -267,6 +318,22 @@ class ExcelWriter:
             ("Severity",           12),
             ("ReasonString",       50),
         ]
+
+        flags_df = pd.DataFrame([
+            {
+                "PO_Number":          f.po_number,
+                "CanonicalVendorName": f.canonical_vendor_name,
+                "Category":           f.category,
+                "Original_Spend":     f.original_spend,
+                "Spend":              f.spend,
+                "SpendGap":           f.spend_gap,
+                "AnomalyScore":       f.anomaly_score,
+                "ZScore":             f.z_score,
+                "Severity":           f.severity,
+                "ReasonString":       f.reason_string,
+            }
+            for f in flags
+        ])
         self._write_table(ws, flags_df, columns, severity_col="Severity")
 
         if not flags_df.empty:
@@ -404,19 +471,19 @@ class ExcelWriter:
         ws.insert_chart(data_start + n + 3, 0, chart)
 
     def _write_savings_chart(
-        self, ws: Worksheet, clusters_df: pd.DataFrame, start_row: int
+        self, ws: Worksheet, clusters: list[ConsolidationCluster], start_row: int
     ) -> None:
         """Embed a bar chart of estimated savings per cluster."""
         data_start = start_row
         ws.write(data_start,     0, "Cluster",          self._fmt["col_header"])
         ws.write(data_start,     1, "Est. Saving ($)",  self._fmt["col_header"])
 
-        for i, (_, row) in enumerate(clusters_df.iterrows()):
-            label = f"Cluster {row['ClusterLabel']} — {row['DominantCategory']}"
-            ws.write(data_start + 1 + i, 0, label,                      self._fmt["cell"])
-            ws.write(data_start + 1 + i, 1, row["EstimatedSavingAmount"], self._fmt["money"])
+        for i, c in enumerate(clusters):
+            label = f"Cluster {c.cluster_label} — {c.dominant_category}"
+            ws.write(data_start + 1 + i, 0, label,                       self._fmt["cell"])
+            ws.write(data_start + 1 + i, 1, c.estimated_saving_amount,   self._fmt["money"])
 
-        n = len(clusters_df)
+        n = len(clusters)
         chart = self._wb.add_chart({"type": "column"})
         chart.add_series({
             "name":       "Estimated Saving",

@@ -74,7 +74,7 @@ class TestStandalonePipeline:
         scores = [
             ws.cell(r, col_idx).value
             for r in range(2, ws.max_row + 1)
-            if ws.cell(r, col_idx).value is not None
+            if isinstance(ws.cell(r, col_idx).value, (int, float))
         ]
         assert len(scores) > 0, "No scored rows found"
         for score in scores:

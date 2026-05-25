@@ -20,6 +20,12 @@ import pandas as pd
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 
+from anomaly_detection.anomaly_flag import AnomalyFlag
+from consolidation.cluster_result import ClusterMember, ConsolidationCluster
+from entity_resolution.vendor_mapping import VendorMapping
+from vendor_scoring.vendor_score import VendorScore
+from data_source_columns import DataSourceColumns
+
 logger = logging.getLogger(__name__)
 
 
@@ -158,22 +164,32 @@ class DataRepository:
     # Write entity resolution
     # ------------------------------------------------------------------
 
-    def write_resolved_vendors(self, mapping_df: pd.DataFrame) -> None:
+    def write_resolved_vendors(self, mappings: list[VendorMapping]) -> None:
         """Bulk insert vendor name mapping into procurement.ResolvedVendors."""
-        if mapping_df.empty:
+        if not mappings:
             return
 
-        # Delete previous mapping for same run
-        run_ids = mapping_df["ResolutionRunId"].dropna().unique().tolist()
+        run_ids = {m.resolution_run_id for m in mappings if m.resolution_run_id is not None}
         if run_ids:
             with self._conn() as conn:
                 conn.execute(
                     text("DELETE FROM procurement.ResolvedVendors WHERE ResolutionRunId = :rid"),
-                    {"rid": int(run_ids[0])},
+                    {"rid": int(next(iter(run_ids)))},
                 )
                 conn.commit()
 
-        mapping_df.to_sql(
+        rows = [
+            {
+                "RawVendorName":      m.raw_vendor_name,
+                "CanonicalVendorName": m.canonical_vendor_name,
+                "MatchScore":         m.match_score,
+                "MatchMethod":        m.match_method,
+                "ResolutionRunId":    m.resolution_run_id,
+                "VATNumber":          m.vat_number,
+            }
+            for m in mappings
+        ]
+        pd.DataFrame(rows).to_sql(
             "ResolvedVendors",
             self._engine,
             schema="procurement",
@@ -181,16 +197,33 @@ class DataRepository:
             index=False,
             chunksize=500,
         )
-        logger.info(f"Wrote {len(mapping_df)} resolved vendor mappings.")
+        logger.info(f"Wrote {len(mappings)} resolved vendor mappings.")
 
     # ------------------------------------------------------------------
     # Write vendor scores
     # ------------------------------------------------------------------
 
-    def write_vendor_scores(self, scores_df: pd.DataFrame) -> None:
-        if scores_df.empty:
+    def write_vendor_scores(self, scores: list[VendorScore]) -> None:
+        if not scores:
             return
-        scores_df.to_sql(
+        rows = [
+            {
+                "RunId":                          s.run_id,
+                DataSourceColumns.CANONICAL_VENDOR: s.canonical_vendor_name,
+                DataSourceColumns.CATEGORY:         s.category,
+                "CompositeScore":                 s.composite_score,
+                "PerformanceBand":                s.performance_band,
+                "SavingPctNorm":                  s.saving_pct_norm,
+                "SpendNorm":                      s.spend_norm,
+                "SpecializationNorm":             s.specialization_norm,
+                "RawAverageSavingPercent":        s.raw_average_saving_percent,
+                "RawTotalSpend":                  s.raw_total_spend,
+                "RawSpecialization":              s.raw_specialization,
+                "RawPurchaseCount":               s.raw_purchase_count,
+            }
+            for s in scores
+        ]
+        pd.DataFrame(rows).to_sql(
             "VendorScores",
             self._engine,
             schema="ai_output",
@@ -198,21 +231,21 @@ class DataRepository:
             index=False,
             chunksize=500,
         )
-        logger.info(f"Wrote {len(scores_df)} vendor score rows.")
+        logger.info(f"Wrote {len(scores)} vendor score rows.")
 
     # ------------------------------------------------------------------
     # Write consolidation results
     # ------------------------------------------------------------------
 
     def write_consolidation(
-        self, clusters_df: pd.DataFrame, members_df: pd.DataFrame
+        self, clusters: list[ConsolidationCluster], members: list[ClusterMember]
     ) -> None:
-        if clusters_df.empty:
+        if not clusters:
             return
 
         # Insert clusters and capture generated Ids
         with self._engine.begin() as conn:
-            for _, row in clusters_df.iterrows():
+            for cluster in clusters:
                 result = conn.execute(
                     text(
                         "INSERT INTO ai_output.ConsolidationClusters "
@@ -223,22 +256,21 @@ class DataRepository:
                         ":total_spend, :saving_pct, :saving_amt)"
                     ),
                     {
-                        "run_id": int(row["RunId"]),
-                        "label": int(row["ClusterLabel"]),
-                        "dom_cat": row.get("DominantCategory"),
-                        "vendor_count": int(row["VendorCount"]),
-                        "total_spend": float(row["TotalSpendAtStake"]),
-                        "saving_pct": float(row.get("EstimatedSavingPct") or 0),
-                        "saving_amt": float(row.get("EstimatedSavingAmount") or 0),
+                        "run_id":       cluster.run_id,
+                        "label":        cluster.cluster_label,
+                        "dom_cat":      cluster.dominant_category,
+                        "vendor_count": cluster.vendor_count,
+                        "total_spend":  cluster.total_spend_at_stake,
+                        "saving_pct":   cluster.estimated_saving_pct,
+                        "saving_amt":   cluster.estimated_saving_amount,
                     },
                 )
                 cluster_id = result.fetchone()[0]
 
                 # Insert members for this cluster
-                cluster_members = members_df[
-                    members_df["ClusterLabel"] == row["ClusterLabel"]
-                ]
-                for _, m in cluster_members.iterrows():
+                for m in members:
+                    if m.cluster_label != cluster.cluster_label:
+                        continue
                     conn.execute(
                         text(
                             "INSERT INTO ai_output.ConsolidationMembers "
@@ -246,33 +278,44 @@ class DataRepository:
                             "VALUES (:cid, :vendor, :spend, :cats)"
                         ),
                         {
-                            "cid": cluster_id,
-                            "vendor": m["CanonicalVendorName"],
-                            "spend": float(m.get("VendorTotalSpend") or 0),
-                            "cats": str(m.get("CategoriesSupplied") or ""),
+                            "cid":    cluster_id,
+                            "vendor": m.canonical_vendor_name,
+                            "spend":  m.vendor_total_spend,
+                            "cats":   m.categories_supplied,
                         },
                     )
 
         logger.info(
-            f"Wrote {len(clusters_df)} consolidation clusters and "
-            f"{len(members_df)} members."
+            f"Wrote {len(clusters)} consolidation clusters and "
+            f"{len(members)} members."
         )
 
     # ------------------------------------------------------------------
     # Write anomaly flags
     # ------------------------------------------------------------------
 
-    def write_anomaly_flags(self, flags_df: pd.DataFrame) -> None:
-        if flags_df.empty:
+    def write_anomaly_flags(self, flags: list[AnomalyFlag]) -> None:
+        if not flags:
             return
 
-        cols = [
-            "RunId", "SourceRecordId", "PO_Number", "CanonicalVendorName",
-            "Category", "Original_Spend", "Spend", "SpendGap",
-            "AnomalyScore", "ZScore", "Severity", "ReasonString",
+        rows = [
+            {
+                "RunId":               f.run_id,
+                "SourceRecordId":      f.source_record_id,
+                "PO_Number":           f.po_number,
+                "CanonicalVendorName": f.canonical_vendor_name,
+                "Category":            f.category,
+                "Original_Spend":      f.original_spend,
+                "Spend":               f.spend,
+                "SpendGap":            f.spend_gap,
+                "AnomalyScore":        f.anomaly_score,
+                "ZScore":              f.z_score,
+                "Severity":            f.severity,
+                "ReasonString":        f.reason_string,
+            }
+            for f in flags
         ]
-        existing_cols = [c for c in cols if c in flags_df.columns]
-        flags_df[existing_cols].to_sql(
+        pd.DataFrame(rows).to_sql(
             "AnomalyFlags",
             self._engine,
             schema="ai_output",
@@ -280,4 +323,4 @@ class DataRepository:
             index=False,
             chunksize=500,
         )
-        logger.info(f"Wrote {len(flags_df)} anomaly flags.")
+        logger.info(f"Wrote {len(flags)} anomaly flags.")

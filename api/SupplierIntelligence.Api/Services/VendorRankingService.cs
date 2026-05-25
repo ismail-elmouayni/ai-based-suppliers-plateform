@@ -21,7 +21,7 @@ public class VendorRankingService : IVendorRankingService
         RawSavingPct = e.RawSavingPct,
         RawTotalSpend = e.RawTotalSpend,
         RawSpecialization = e.RawSpecialization,
-        POCount = e.POCount,
+        PurchaseCount = e.PurchaseCount,
     };
 
     public async Task<PagedResult<VendorScoreDto>> GetScoresAsync(

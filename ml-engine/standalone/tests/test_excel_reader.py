@@ -14,6 +14,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
 from standalone.io.excel_reader import ExcelReader, REQUIRED_COLUMNS
+from data_source_columns import DataSourceColumns
 
 
 # ---------------------------------------------------------------------------
@@ -27,10 +28,17 @@ def _write_xlsx(path: Path, df: pd.DataFrame, sheet_name: str = "ProcurementReco
 
 def _minimal_row(**overrides) -> dict:
     base = {
-        "Id": 1, "Country": "FR", "Vendor": "ACME", "Category": "IT",
-        "PO_Number": "PO-0001", "Item_Description": "Widget",
-        "Original_Spend": 10000.0, "OPEX_CAPEX": "OPEX",
-        "Saving": 500.0, "Saving_Pct": 0.05, "Spend": 9500.0,
+        DataSourceColumns.ID: 1,
+        DataSourceColumns.COUNTRY: "FR",
+        DataSourceColumns.VENDOR: "ACME",
+        DataSourceColumns.CATEGORY: "IT",
+        DataSourceColumns.PURCHASE_ORDERS_NUMBER: "PO-0001",
+        DataSourceColumns.ITEM_DESCRIPTION: "Widget",
+        DataSourceColumns.ORIGINAL_SPEND: 10000.0,
+        DataSourceColumns.OPEX_CAPEX: "OPEX",
+        DataSourceColumns.SAVING: 500.0,
+        DataSourceColumns.SAVING_PERCENT: 0.05,
+        DataSourceColumns.SPEND: 9500.0,
     }
     base.update(overrides)
     return base
