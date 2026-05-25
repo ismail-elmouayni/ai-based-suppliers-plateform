@@ -92,8 +92,8 @@ class TestVendorScorer:
         result_saving = scorer_saving.score(df2, run_id=1)
         result_spend = scorer_spend.score(df2, run_id=1)
 
-        s1_saving = result_saving[result_saving[DataSourceColumns.CANONICAL_VENDOR] == "V1"]["CompositeScore"].iloc[0]
-        s1_spend = result_spend[result_spend[DataSourceColumns.CANONICAL_VENDOR] == "V1"]["CompositeScore"].iloc[0]
+        s1_saving = next(s.composite_score for s in result_saving if s.canonical_vendor_name == "V1")
+        s1_spend  = next(s.composite_score for s in result_spend  if s.canonical_vendor_name == "V1")
         assert s1_saving != s1_spend
 
     def test_null_category_excluded(self):

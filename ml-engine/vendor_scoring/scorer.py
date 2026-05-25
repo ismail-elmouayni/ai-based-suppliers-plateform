@@ -16,6 +16,7 @@ import pandas as pd
 
 from config_types import VendorScoringConfig
 from core.raw_data_processing import RawDataProcessing
+from core.series_processing import normalize
 from data_source_columns import DataSourceColumns
 from vendor_scoring.vendor_score import PerformanceBand, VendorScore
 
@@ -31,16 +32,7 @@ class VendorScorer:
         self.band_green_min         = config.band_green_min
         self.band_amber_min         = config.band_amber_min
 
-
-    @staticmethod
-    def _normalize(series: pd.Series) -> pd.Series:
-        """Min-max normalise, making series value betsween 0 and 1; returns 0.5 when min == max."""
-        mn, mx = series.min(), series.max()
-        if mx == mn:
-            return pd.Series(0.5, index=series.index)
-        
-        return (series - mn) / (mx - mn)
-
+    
     def _assign_performance_band(self, score: float, purchase_count: int) -> PerformanceBand:
         """Assign performance band based on composite score and purchase count."""
         if purchase_count < self.min_purchase_count:
@@ -51,7 +43,6 @@ class VendorScorer:
             return PerformanceBand.AMBER
         
         return PerformanceBand.RED
-
 
     def score(self, data_frame: pd.DataFrame, run_id: int) -> list[VendorScore]:
         """
@@ -96,45 +87,42 @@ class VendorScorer:
         rows: list[VendorScore] = []
 
         if not valid_vendors.empty:
-            valid_vendors[VendorScore.SAVING_PERCENT_NORM]  = self._normalize(valid_vendors[VendorScore.RAW_AVERAGE_SAVING_PERCENT])
-            valid_vendors[VendorScore.SPEND_NORM]           = self._normalize(valid_vendors[VendorScore.RAW_TOTAL_SPEND])
-            valid_vendors[VendorScore.SPECIALIZATION_NORM]  = self._normalize(valid_vendors[VendorScore.RAW_SPECIALIZATION])
-
-            valid_vendors[VendorScore.COMPOSITE_SCORE] = (
-                valid_vendors[VendorScore.SAVING_PERCENT_NORM] * self.saving_weight
-                + valid_vendors[VendorScore.SPEND_NORM] * self.spend_weight
-                + valid_vendors[VendorScore.SPECIALIZATION_NORM] * self.specialization_weight
-            ) * 100.0
-
-            valid_vendors[VendorScore.COMPOSITE_SCORE] = valid_vendors[VendorScore.COMPOSITE_SCORE].round(2).clip(0, 100)
-            valid_vendors[VendorScore.PERFORMANCE_BAND] = valid_vendors.apply(
+           valid_vendors = self._add_normalized_columns(valid_vendors)
+           valid_vendors = self._add_composite_score(valid_vendors)
+           valid_vendors[VendorScore.PERFORMANCE_BAND] = valid_vendors.apply(
                 lambda r: self._assign_performance_band(r[VendorScore.COMPOSITE_SCORE], r[VendorScore.RAW_PURCHASE_COUNT]), axis=1
             )
-
-            for _, row in valid_vendors.iterrows():
+           
+           for _, row in valid_vendors.iterrows():
                 rows.append(VendorScore.from_series(run_id, row))
 
         # Insufficient data rows
         for _, row in vendors_with_insufficient_po.iterrows():
-            rows.append(VendorScore(
-                run_id=run_id,
-                canonical_vendor_name=row[DataSourceColumns.CANONICAL_VENDOR],
-                category=row[DataSourceColumns.CATEGORY],
-                composite_score=0.0,
-                performance_band=PerformanceBand.INSUFFICIENT,
-                saving_pct_norm=None,
-                spend_norm=None,
-                specialization_norm=None,
-                raw_average_saving_percent=float(row[VendorScore.RAW_AVERAGE_SAVING_PERCENT]),
-                raw_total_spend=float(row[VendorScore.RAW_TOTAL_SPEND]),
-                raw_specialization=float(row[VendorScore.RAW_SPECIALIZATION]),
-                raw_purchase_count=int(row[VendorScore.RAW_PURCHASE_COUNT]),
-            ))
+            rows.append(VendorScore.create_insufficient_data(run_id, row)) 
 
         logger.info(
             f"Scoring complete: {len(valid_vendors)} scored, "
             f"{len(vendors_with_insufficient_po)} insufficient_data pairs."
         )
         return rows
+    
+    def _add_normalized_columns(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Add normalized signal columns to *df* for debugging/inspection."""
+        df = df.copy()
+        df[VendorScore.SAVING_PERCENT_NORM]  = normalize(df[VendorScore.RAW_AVERAGE_SAVING_PERCENT])
+        df[VendorScore.SPEND_NORM]           = normalize(df[VendorScore.RAW_TOTAL_SPEND])
+        df[VendorScore.SPECIALIZATION_NORM]  = normalize(df[VendorScore.RAW_SPECIALIZATION])
 
+        return df
+    
+    def _add_composite_score(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Add composite score and performance band columns to *df* for debugging/inspection."""
+        df = df.copy()
+        df[VendorScore.COMPOSITE_SCORE] = (
+            df[VendorScore.SAVING_PERCENT_NORM] * self.saving_weight
+            + df[VendorScore.SPEND_NORM] * self.spend_weight
+            + df[VendorScore.SPECIALIZATION_NORM] * self.specialization_weight
+        ) * 100.0
 
+        df[VendorScore.COMPOSITE_SCORE] = df[VendorScore.COMPOSITE_SCORE].round(2).clip(0, 100)
+        return df

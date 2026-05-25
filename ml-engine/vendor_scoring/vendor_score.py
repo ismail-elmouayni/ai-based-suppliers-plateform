@@ -68,3 +68,22 @@ class VendorScore:
             raw_specialization=float(row[cls.RAW_SPECIALIZATION]),
             raw_purchase_count=int(row[cls.RAW_PURCHASE_COUNT]),
         )
+    
+    @classmethod
+    def create_insufficient_data(cls, run_id: int, row : pd.Series) -> VendorScore:
+        """Factory method for creating an INSUFFICIENT_DATA VendorScore."""
+        return cls(
+            run_id=run_id,
+            canonical_vendor_name=row[DataSourceColumns.CANONICAL_VENDOR],
+            category=row[DataSourceColumns.CATEGORY],
+            composite_score=0.0,
+            performance_band=PerformanceBand.INSUFFICIENT,
+            saving_pct_norm=None,
+            spend_norm=None,
+            specialization_norm=None,
+            raw_average_saving_percent=float(row[cls.RAW_AVERAGE_SAVING_PERCENT]),
+            raw_total_spend=float(row[cls.RAW_TOTAL_SPEND]),
+            raw_specialization=float(row[cls.RAW_SPECIALIZATION]),
+            raw_purchase_count=int(row[cls.RAW_PURCHASE_COUNT]),
+        )
+            
