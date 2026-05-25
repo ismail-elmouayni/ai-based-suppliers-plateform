@@ -42,7 +42,7 @@ if str(_WORKSPACE_ROOT) not in sys.path:
 from entity_resolution.resolver import VendorResolver     # noqa: E402
 from vendor_scoring.vendor_scorer import VendorScorer             # noqa: E402
 from consolidation.clusterer import VendorClusterer        # noqa: E402
-from anomaly_detection.detector import AnomalyDetector     # noqa: E402
+from anomaly_detection.anomaly_detector import AnomalyDetector     # noqa: E402
 from config_types import VendorScoringConfig               # noqa: E402
 
 from standalone.io.excel_reader import ExcelReader         # noqa: E402
@@ -130,7 +130,7 @@ class StandalonePipeline:
 
         # Step 7 — Anomaly detection
         logger.info("Step 7/7: Running anomaly detection...")
-        flags_df = self._detect_anomalies(raw_df)
+        flags = self._detect_anomalies(raw_df)
 
         # Write output workbook
         self._write_output(
@@ -140,7 +140,7 @@ class StandalonePipeline:
             scores_df=scores_df,
             clusters_df=clusters_df,
             members_df=members_df,
-            flags_df=flags_df,
+            flags=flags,
         )
 
         elapsed = time.time() - t0
@@ -194,10 +194,10 @@ class StandalonePipeline:
         logger.info("  Found %d consolidation clusters.", len(clusters_df))
         return clusters_df, members_df
 
-    def _detect_anomalies(self, raw_df: pd.DataFrame) -> pd.DataFrame:
-        flags_df = self.detector.detect(raw_df, run_id=0)
-        logger.info("  Flagged %d anomalous POs.", len(flags_df))
-        return flags_df
+    def _detect_anomalies(self, raw_df: pd.DataFrame) -> list:
+        flags = self.detector.detect(raw_df, run_id=0)
+        logger.info("  Flagged %d anomalous POs.", len(flags))
+        return flags
 
     def _write_output(
         self,
@@ -207,12 +207,12 @@ class StandalonePipeline:
         scores_df: pd.DataFrame,
         clusters_df: pd.DataFrame,
         members_df: pd.DataFrame,
-        flags_df: pd.DataFrame,
+        flags: list,
     ) -> None:
         stats = {
             "total_vendors": mapping_df[DataSourceColumns.CANONICAL_VENDOR].nunique(),
             "total_spend":   raw_df[DataSourceColumns.SPEND].sum() if DataSourceColumns.SPEND in raw_df.columns else 0,
-            "anomaly_count": len(flags_df),
+            "anomaly_count": len(flags),
             "cluster_count": len(clusters_df),
         }
         with ExcelWriter(output_path) as writer:
@@ -220,5 +220,5 @@ class StandalonePipeline:
             writer.write_entity_resolution(mapping_df)
             writer.write_vendor_scores(scores_df)
             writer.write_consolidation(clusters_df, members_df)
-            writer.write_anomaly_flags(flags_df)
+            writer.write_anomaly_flags(flags)
         logger.info("  Wrote 6 sheets to '%s'.", output_path)

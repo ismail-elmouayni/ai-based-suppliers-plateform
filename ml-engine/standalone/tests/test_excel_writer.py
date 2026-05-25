@@ -21,30 +21,33 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
 import openpyxl
 from standalone.io.excel_writer import ExcelWriter
+from anomaly_detection.anomaly_flag import AnomalyFlag, Severity
+from vendor_scoring.vendor_score import PerformanceBand, VendorScore
 
 # ---------------------------------------------------------------------------
 # Minimal DataFrames for writer tests
 # ---------------------------------------------------------------------------
 
-def _make_scores_df(n: int = 6) -> pd.DataFrame:
-    bands = ["GREEN", "GREEN", "AMBER", "AMBER", "RED", "INSUFFICIENT_DATA"]
-    rows = []
-    for i in range(n):
-        rows.append({
-            "RunId": 0,
-            "CanonicalVendorName": f"VENDOR_{i}",
-            "Category": "IT",
-            "CompositeScore": 90.0 - i * 12,
-            "PerformanceBand": bands[i % len(bands)],
-            "SavingPctNorm": 0.8,
-            "SpendNorm": 0.7,
-            "SpecializationNorm": 0.9,
-            "RawSavingPct": 0.15,
-            "RawTotalSpend": 100_000.0,
-            "RawSpecialization": 1.0,
-            "PurchaseCount": 5,
-        })
-    return pd.DataFrame(rows)
+def _make_scores(n: int = 6) -> list[VendorScore]:
+    bands = [PerformanceBand.GREEN, PerformanceBand.GREEN, PerformanceBand.AMBER,
+             PerformanceBand.AMBER, PerformanceBand.RED, PerformanceBand.INSUFFICIENT]
+    return [
+        VendorScore(
+            run_id=0,
+            canonical_vendor_name=f"VENDOR_{i}",
+            category="IT",
+            composite_score=round(90.0 - i * 12, 2),
+            performance_band=bands[i % len(bands)],
+            saving_pct_norm=0.8,
+            spend_norm=0.7,
+            specialization_norm=0.9,
+            raw_average_saving_percent=0.15,
+            raw_total_spend=100_000.0,
+            raw_specialization=1.0,
+            raw_purchase_count=5,
+        )
+        for i in range(n)
+    ]
 
 
 def _make_clusters_df() -> pd.DataFrame:
@@ -69,19 +72,23 @@ def _make_members_df() -> pd.DataFrame:
     ])
 
 
-def _make_flags_df() -> pd.DataFrame:
-    return pd.DataFrame([
-        {"RunId": 0, "SourceRecordId": 1, "PO_Number": "PO-0001",
-         "CanonicalVendorName": "VENDOR_A", "Category": "IT",
-         "Original_Spend": 10_000.0, "Spend": 40_000.0,
-         "SpendGap": 30_000.0, "AnomalyScore": 0.95, "ZScore": 4.1,
-         "Severity": "HIGH", "ReasonString": "SpendGap +4.1σ above group mean"},
-        {"RunId": 0, "SourceRecordId": 2, "PO_Number": "PO-0002",
-         "CanonicalVendorName": "VENDOR_B", "Category": "IT",
-         "Original_Spend": 15_000.0, "Spend": 30_000.0,
-         "SpendGap": 15_000.0, "AnomalyScore": 0.70, "ZScore": 2.3,
-         "Severity": "MEDIUM", "ReasonString": "SpendGap +2.3σ above group mean"},
-    ])
+def _make_flags() -> list[AnomalyFlag]:
+    return [
+        AnomalyFlag(
+            run_id=0, source_record_id=1, po_number="PO-0001",
+            canonical_vendor_name="VENDOR_A", category="IT",
+            original_spend=10_000.0, spend=40_000.0,
+            spend_gap=30_000.0, anomaly_score=0.95, z_score=4.1,
+            severity=Severity.HIGH, reason_string="SpendGap +4.1\u03c3 above group mean",
+        ),
+        AnomalyFlag(
+            run_id=0, source_record_id=2, po_number="PO-0002",
+            canonical_vendor_name="VENDOR_B", category="IT",
+            original_spend=15_000.0, spend=30_000.0,
+            spend_gap=15_000.0, anomaly_score=0.70, z_score=2.3,
+            severity=Severity.MEDIUM, reason_string="SpendGap +2.3\u03c3 above group mean",
+        ),
+    ]
 
 
 def _make_mapping_df() -> pd.DataFrame:
@@ -117,9 +124,9 @@ def written_workbook(tmp_path) -> Path:
         }
         writer.write_summary(stats, _make_raw_df())
         writer.write_entity_resolution(_make_mapping_df())
-        writer.write_vendor_scores(_make_scores_df())
+        writer.write_vendor_scores(_make_scores())
         writer.write_consolidation(_make_clusters_df(), _make_members_df())
-        writer.write_anomaly_flags(_make_flags_df())
+        writer.write_anomaly_flags(_make_flags())
     return path
 
 
@@ -206,17 +213,11 @@ class TestExcelWriter:
         assert "Entity_Resolution" in wb.sheetnames
 
     def test_empty_flags_df_no_chart(self, tmp_path):
-        """Empty AnomalyFlags DataFrame is handled gracefully (no chart, no crash)."""
+        """Empty AnomalyFlags list is handled gracefully (no chart, no crash)."""
         path = tmp_path / "empty_flags.xlsx"
-        empty_flags = pd.DataFrame(
-            columns=["PO_Number", "CanonicalVendorName", "Category",
-                     "Original_Spend", "Spend", "SpendGap",
-                     "AnomalyScore", "ZScore", "Severity", "ReasonString"]
-        )
         with ExcelWriter(path) as writer:
-            writer.write_anomaly_flags(empty_flags)
+            writer.write_anomaly_flags([])
         wb = openpyxl.load_workbook(path)
-        # Sheet should exist but no chart (empty data)
         assert "Anomaly_Flags" in wb.sheetnames
         ws = wb["Anomaly_Flags"]
         assert len(ws._charts) == 0

@@ -34,6 +34,7 @@ from typing import Any, Union
 
 import pandas as pd
 
+from anomaly_detection.anomaly_flag import AnomalyFlag, Severity
 from vendor_scoring.vendor_score import VendorScore
 import xlsxwriter
 from xlsxwriter.workbook import Workbook
@@ -262,7 +263,7 @@ class ExcelWriter:
         ]
         self._write_table(ws_m, members_df, member_cols)
 
-    def write_anomaly_flags(self, flags_df: pd.DataFrame) -> None:
+    def write_anomaly_flags(self, flags: list[AnomalyFlag]) -> None:
         """Write the Anomaly_Flags sheet with a severity pie chart."""
         ws = self._wb.add_worksheet("Anomaly_Flags")
         ws.set_zoom(90)
@@ -280,6 +281,22 @@ class ExcelWriter:
             ("Severity",           12),
             ("ReasonString",       50),
         ]
+
+        flags_df = pd.DataFrame([
+            {
+                "PO_Number":          f.po_number,
+                "CanonicalVendorName": f.canonical_vendor_name,
+                "Category":           f.category,
+                "Original_Spend":     f.original_spend,
+                "Spend":              f.spend,
+                "SpendGap":           f.spend_gap,
+                "AnomalyScore":       f.anomaly_score,
+                "ZScore":             f.z_score,
+                "Severity":           f.severity,
+                "ReasonString":       f.reason_string,
+            }
+            for f in flags
+        ])
         self._write_table(ws, flags_df, columns, severity_col="Severity")
 
         if not flags_df.empty:

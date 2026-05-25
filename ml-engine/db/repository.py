@@ -20,6 +20,7 @@ import pandas as pd
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 
+from anomaly_detection.anomaly_flag import AnomalyFlag
 from vendor_scoring.vendor_score import VendorScore
 from data_source_columns import DataSourceColumns
 
@@ -282,17 +283,28 @@ class DataRepository:
     # Write anomaly flags
     # ------------------------------------------------------------------
 
-    def write_anomaly_flags(self, flags_df: pd.DataFrame) -> None:
-        if flags_df.empty:
+    def write_anomaly_flags(self, flags: list[AnomalyFlag]) -> None:
+        if not flags:
             return
 
-        cols = [
-            "RunId", "SourceRecordId", "PO_Number", "CanonicalVendorName",
-            "Category", "Original_Spend", "Spend", "SpendGap",
-            "AnomalyScore", "ZScore", "Severity", "ReasonString",
+        rows = [
+            {
+                "RunId":               f.run_id,
+                "SourceRecordId":      f.source_record_id,
+                "PO_Number":           f.po_number,
+                "CanonicalVendorName": f.canonical_vendor_name,
+                "Category":            f.category,
+                "Original_Spend":      f.original_spend,
+                "Spend":               f.spend,
+                "SpendGap":            f.spend_gap,
+                "AnomalyScore":        f.anomaly_score,
+                "ZScore":              f.z_score,
+                "Severity":            f.severity,
+                "ReasonString":        f.reason_string,
+            }
+            for f in flags
         ]
-        existing_cols = [c for c in cols if c in flags_df.columns]
-        flags_df[existing_cols].to_sql(
+        pd.DataFrame(rows).to_sql(
             "AnomalyFlags",
             self._engine,
             schema="ai_output",
@@ -300,4 +312,4 @@ class DataRepository:
             index=False,
             chunksize=500,
         )
-        logger.info(f"Wrote {len(flags_df)} anomaly flags.")
+        logger.info(f"Wrote {len(flags)} anomaly flags.")

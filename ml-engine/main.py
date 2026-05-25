@@ -25,7 +25,7 @@ from db.repository import DataRepository
 from entity_resolution.resolver import VendorResolver
 from vendor_scoring.vendor_scorer import VendorScorer
 from consolidation.clusterer import VendorClusterer
-from anomaly_detection.detector import AnomalyDetector
+from anomaly_detection.anomaly_detector import AnomalyDetector
 from config_types import (
     AnomalyConfig,
     ConsolidationConfig,
@@ -104,8 +104,8 @@ class Pipeline:
 
             # 7. Anomaly detection
             logger.info("Step 6/7: Running anomaly detection...")
-            flags_df = self.detector.detect(raw_df, run_id=run_id)
-            self.repo.write_anomaly_flags(flags_df)
+            flags = self.detector.detect(raw_df, run_id=run_id)
+            self.repo.write_anomaly_flags(flags)
 
             # Update run log COMPLETED
             duration_ms = int(time.time() * 1000) - start_ms

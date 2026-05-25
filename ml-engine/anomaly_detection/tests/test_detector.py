@@ -3,7 +3,8 @@
 import pytest
 import pandas as pd
 import numpy as np
-from anomaly_detection.detector import AnomalyDetector, SEVERITY_HIGH, SEVERITY_MEDIUM, SEVERITY_LOW
+from anomaly_detection.anomaly_detector import AnomalyDetector
+from anomaly_detection.anomaly_flag import AnomalyFlag, Severity
 from data_source_columns import DataSourceColumns
 
 CONFIG = {
@@ -58,59 +59,56 @@ class TestAnomalyDetector:
         """AnomalyScore must be in [0, 1]."""
         df = make_normal_df(n=60)
         result = self.detector.detect(df, run_id=1)
-        if not result.empty:
-            assert (result["AnomalyScore"] >= 0).all()
-            assert (result["AnomalyScore"] <= 1).all()
+        if result:
+            assert all(0 <= f.anomaly_score <= 1 for f in result)
 
     def test_severity_high_threshold(self):
         """Flag with |z| ≥ 3.0 should be HIGH."""
         detector = AnomalyDetector(CONFIG)
-        assert detector._assign_severity(3.5) == SEVERITY_HIGH
-        assert detector._assign_severity(-3.1) == SEVERITY_HIGH
+        assert detector._assign_severity(3.5) == Severity.HIGH
+        assert detector._assign_severity(-3.1) == Severity.HIGH
 
     def test_severity_medium_threshold(self):
         """Flag with 2.0 ≤ |z| < 3.0 should be MEDIUM."""
         detector = AnomalyDetector(CONFIG)
-        assert detector._assign_severity(2.5) == SEVERITY_MEDIUM
-        assert detector._assign_severity(-2.0) == SEVERITY_MEDIUM
+        assert detector._assign_severity(2.5) == Severity.MEDIUM
+        assert detector._assign_severity(-2.0) == Severity.MEDIUM
 
     def test_severity_low_threshold(self):
         """Flag with |z| < 2.0 should be LOW."""
         detector = AnomalyDetector(CONFIG)
-        assert detector._assign_severity(1.0) == SEVERITY_LOW
-        assert detector._assign_severity(0.0) == SEVERITY_LOW
+        assert detector._assign_severity(1.0) == Severity.LOW
+        assert detector._assign_severity(0.0) == Severity.LOW
 
     def test_reason_string_contains_sigma(self):
         """ReasonString must contain σ notation."""
         df = make_normal_df(n=60)
         result = self.detector.detect(df, run_id=1)
-        if not result.empty:
-            assert result["ReasonString"].str.contains("σ").any()
+        if result:
+            assert any("σ" in f.reason_string for f in result)
 
     def test_negative_original_spend_handled(self):
         """Rows with negative Original_Spend should not raise errors."""
         df = make_normal_df(n=20)
         df.loc[0, DataSourceColumns.ORIGINAL_SPEND] = -50000.0
         df.loc[0, DataSourceColumns.SPEND] = -45000.0
-        # Should run without exception
         result = self.detector.detect(df, run_id=1)
-        assert isinstance(result, pd.DataFrame)
+        assert isinstance(result, list)
 
     def test_output_columns(self):
-        """Output DataFrame has all required columns."""
+        """Output AnomalyFlag objects have all required fields."""
         df = make_normal_df(n=40)
         result = self.detector.detect(df, run_id=1)
-        if not result.empty:
-            required = {
-                "RunId", "SourceRecordId", "PO_Number", "CanonicalVendorName",
-                "Category", "Original_Spend", "Spend", "SpendGap",
-                "AnomalyScore", "ZScore", "Severity", "ReasonString",
-            }
-            assert required.issubset(set(result.columns))
+        if result:
+            flag = result[0]
+            assert isinstance(flag, AnomalyFlag)
+            assert isinstance(flag.severity, Severity)
+            assert isinstance(flag.reason_string, str)
+            assert 0 <= flag.anomaly_score <= 1
 
     def test_empty_df_returns_empty(self):
-        """Empty input returns empty DataFrame."""
+        """Empty input returns empty list."""
         df = pd.DataFrame(columns=[DataSourceColumns.ID, DataSourceColumns.PURCHASE_ORDERS_NUMBER, DataSourceColumns.CANONICAL_VENDOR, DataSourceColumns.CATEGORY,
                                     DataSourceColumns.ORIGINAL_SPEND, DataSourceColumns.SPEND, DataSourceColumns.SAVING_PERCENT])
         result = self.detector.detect(df, run_id=1)
-        assert result.empty
+        assert result == []
