@@ -27,3 +27,8 @@ class DataSourceColumns:
     # Post entity-resolution column (added to the DataFrame by the pipeline)
     # ------------------------------------------------------------------
     CANONICAL_VENDOR = "CanonicalVendorName"
+
+    # ------------------------------------------------------------------
+    # Optional enrichment columns (null-filled when absent in source data)
+    # ------------------------------------------------------------------
+    VAT_NUMBER       = "VATNumber"

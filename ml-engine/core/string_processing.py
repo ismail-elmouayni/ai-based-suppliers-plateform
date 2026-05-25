@@ -41,3 +41,20 @@ class StringProcessing:
                 name = re.sub(pattern, "", name).strip().rstrip(",").strip()
 
         return name
+
+    @staticmethod
+    def expand_token_aliases(name: str, aliases: dict[str, str]) -> str:
+        """Replace abbreviated tokens with their canonical expansions.
+
+        Each whitespace-separated token in *name* is looked up in *aliases*
+        (exact match, case-sensitive — callers should normalise both before
+        calling).  Unrecognised tokens are left unchanged.
+
+        Example
+        -------
+        >>> StringProcessing.expand_token_aliases("TP GROUP", {"TP": "TELEPERFORMANCE"})
+        'TELEPERFORMANCE GROUP'
+        """
+        if not aliases:
+            return name
+        return " ".join(aliases.get(token, token) for token in name.split())

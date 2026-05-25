@@ -64,7 +64,7 @@ consolidation:
 entity_resolution:
   # Minimum rapidfuzz WRatio score (0–100) to consider two vendor names a match.
   # Lower values increase recall (more matches); higher values increase precision.
-  match_threshold: 85
+  match_threshold: 95
 
   # Number of top candidates to evaluate per name during fuzzy matching.
   top_k_candidates: 5
@@ -85,3 +85,9 @@ entity_resolution:
     - LLC
     - CORP
     - STE
+
+  # Known token-level abbreviations: key is the short form, value is the expansion.
+  # Both are uppercased automatically.  Add entries whenever a new abbreviation is
+  # confirmed.
+  token_aliases:
+    TP: TELEPERFORMANCE

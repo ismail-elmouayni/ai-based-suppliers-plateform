@@ -51,15 +51,24 @@ class EntityResolutionConfig:
     top_k_candidates: int = 5
     normalize_before_match: bool = True
     strip_suffixes: tuple[str, ...] = field(default_factory=tuple)
+    token_aliases: tuple[tuple[str, str], ...] = field(default_factory=tuple)
+
+    def token_aliases_dict(self) -> dict[str, str]:
+        """Return token_aliases as a plain dict for lookup."""
+        return dict(self.token_aliases)
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> EntityResolutionConfig:
         d = d.get(cls.CONFIG_KEY, {})
+        raw_aliases: dict[str, str] = d.get("token_aliases", {})
         return cls(
             match_threshold=float(d.get("match_threshold", 85)),
             top_k_candidates=int(d.get("top_k_candidates", 5)),
             normalize_before_match=bool(d.get("normalize_before_match", True)),
             strip_suffixes=tuple(s.upper() for s in d.get("strip_suffixes", [])),
+            token_aliases=tuple(
+                (k.upper(), v.upper()) for k, v in raw_aliases.items()
+            ),
         )
 
 

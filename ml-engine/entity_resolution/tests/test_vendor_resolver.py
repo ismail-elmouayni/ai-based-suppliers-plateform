@@ -115,3 +115,71 @@ class TestVendorResolver:
         df = pd.DataFrame(columns=[DataSourceColumns.VENDOR, DataSourceColumns.PURCHASE_ORDERS_NUMBER])
         result = self.resolver.resolve(df)
         assert result == []
+
+
+# ---------------------------------------------------------------------------
+# New tests for alias expansion, VAT force-merge, VAT block
+# ---------------------------------------------------------------------------
+
+def make_df_with_vat(rows: list[dict]) -> pd.DataFrame:
+    """Build a df with Vendor, PO_Number, Category, and VATNumber columns."""
+    return pd.DataFrame([
+        {
+            DataSourceColumns.VENDOR: r["vendor"],
+            DataSourceColumns.PURCHASE_ORDERS_NUMBER: r.get("po", f"PO-{i:03d}"),
+            DataSourceColumns.CATEGORY: r.get("category", "IT"),
+            DataSourceColumns.VAT_NUMBER: r.get("vat"),
+        }
+        for i, r in enumerate(rows)
+    ])
+
+
+class TestAliasExpansion:
+    def setup_method(self):
+        cfg = {
+            "entity_resolution": {
+                **CONFIG["entity_resolution"],
+                "token_aliases": {"TP": "TELEPERFORMANCE"},
+            }
+        }
+        self.resolver = VendorResolver(EntityResolutionConfig.from_dict(cfg))
+
+    def test_alias_expands_and_merges(self):
+        """TP GROUP INC and TELEPERFORMANCE GROUP INC should merge via alias expansion."""
+        df = make_df_with_vat([
+            {"vendor": "TELEPERFORMANCE GROUP INC", "po": "PO-001"},
+            {"vendor": "TELEPERFORMANCE GROUP INC", "po": "PO-002"},
+            {"vendor": "TP GROUP INC",              "po": "PO-003"},
+        ])
+        result = self.resolver.resolve(df)
+        mapped = {m.raw_vendor_name: m.canonical_vendor_name for m in result}
+        assert mapped["TP GROUP INC"] == mapped["TELEPERFORMANCE GROUP INC"]
+
+
+class TestVATSignal:
+    def setup_method(self):
+        self.resolver = VendorResolver(EntityResolutionConfig.from_dict(CONFIG))
+
+    def test_same_vat_force_merges_dissimilar_names(self):
+        """Two vendors with the same non-null VAT must be merged regardless of name similarity."""
+        df = make_df_with_vat([
+            {"vendor": "TELEPERFORMANCE SE",   "vat": "FR12345678901", "po": "PO-001"},
+            {"vendor": "TP GROUP INC",          "vat": "FR12345678901", "po": "PO-002"},
+        ])
+        result = self.resolver.resolve(df)
+        mapped = {m.raw_vendor_name: m.canonical_vendor_name for m in result}
+        assert mapped["TELEPERFORMANCE SE"] == mapped["TP GROUP INC"]
+        # The VAT-forced merge should be surfaced in the match_method
+        tp_entry = next(m for m in result if m.raw_vendor_name == "TP GROUP INC")
+        assert tp_entry.match_method in ("VAT_FORCE_MERGE", "EXACT", "FUZZY_WRATIO")
+
+    def test_different_vat_blocks_name_merge(self):
+        """Two vendors with similar names but different non-null VATs must NOT be merged."""
+        df = make_df_with_vat([
+            {"vendor": "ACME INDUSTRIES LTD", "vat": "GB111111111", "po": "PO-001"},
+            {"vendor": "ACME INDUSTRIES",     "vat": "GB222222222", "po": "PO-002"},
+        ])
+        result = self.resolver.resolve(df)
+        mapped = {m.raw_vendor_name: m.canonical_vendor_name for m in result}
+        # Different VATs → must remain separate entities
+        assert mapped["ACME INDUSTRIES LTD"] != mapped["ACME INDUSTRIES"]

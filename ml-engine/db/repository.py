@@ -185,6 +185,7 @@ class DataRepository:
                 "MatchScore":         m.match_score,
                 "MatchMethod":        m.match_method,
                 "ResolutionRunId":    m.resolution_run_id,
+                "VATNumber":          m.vat_number,
             }
             for m in mappings
         ]

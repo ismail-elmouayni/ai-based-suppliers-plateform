@@ -74,7 +74,20 @@ COLUMN_ALIASES: dict[str, str] = {
     "saving pct":       DataSourceColumns.SAVING_PERCENT,
     "savings %":        DataSourceColumns.SAVING_PERCENT,
     "savings pct":      DataSourceColumns.SAVING_PERCENT,
+    # VAT number
+    "vat number":       DataSourceColumns.VAT_NUMBER,
+    "vat_number":       DataSourceColumns.VAT_NUMBER,
+    "vatno":            DataSourceColumns.VAT_NUMBER,
+    "vat no":           DataSourceColumns.VAT_NUMBER,
+    "tax id":           DataSourceColumns.VAT_NUMBER,
+    "tax_id":           DataSourceColumns.VAT_NUMBER,
 }
+
+# Optional columns: present only in some sources.  ExcelReader null-fills
+# them when absent so downstream code can always rely on their presence.
+OPTIONAL_COLUMNS: list[str] = [
+    DataSourceColumns.VAT_NUMBER,
+]
 
 
 # ---------------------------------------------------------------------------
@@ -124,6 +137,7 @@ class ExcelReader:
         df = self._ensure_id_column(df)
         self._validate_columns(df)
         self._validate_not_empty(df)
+        df = self._fill_optional_columns(df)
         df = self._coerce_numerics(df)
         df = self._strip_strings(df)
         logger.info(
@@ -185,6 +199,14 @@ class ExcelReader:
                 f"Input file '{self.path}' contains no data rows. "
                 "Please provide at least one procurement record."
             )
+
+    def _fill_optional_columns(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Null-fill any optional columns absent from the source file."""
+        df = df.copy()
+        for col in OPTIONAL_COLUMNS:
+            if col not in df.columns:
+                df[col] = None
+        return df
 
     def _coerce_numerics(self, df: pd.DataFrame) -> pd.DataFrame:
         df = df.copy()

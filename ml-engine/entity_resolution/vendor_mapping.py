@@ -16,9 +16,11 @@ class VendorMapping:
     MATCH_SCORE           = "match_score"
     MATCH_METHOD          = "match_method"
     RESOLUTION_RUN_ID     = "resolution_run_id"
+    VAT_NUMBER            = "vat_number"
 
     raw_vendor_name: str
     canonical_vendor_name: str
     match_score: float
     match_method: str
     resolution_run_id: int | None
+    vat_number: str | None = None
