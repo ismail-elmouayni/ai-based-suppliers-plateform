@@ -16,7 +16,7 @@ import sys
 import threading
 import time
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Any, Optional
 
 import yaml
 from flask import Flask, jsonify, request
@@ -26,6 +26,13 @@ from entity_resolution.resolver import VendorResolver
 from vendor_scoring.scorer import VendorScorer
 from consolidation.clusterer import VendorClusterer
 from anomaly_detection.detector import AnomalyDetector
+from config_types import (
+    AnomalyConfig,
+    ConsolidationConfig,
+    EntityResolutionConfig,
+    VendorScoringConfig,
+)
+from data_source_columns import DataSourceColumns
 
 logging.basicConfig(
     level=logging.INFO,
@@ -40,7 +47,7 @@ CONFIG_PATH = os.getenv("MODEL_CONFIG_PATH", "/config/model_config.yml")
 # Config loader
 # ---------------------------------------------------------------------------
 
-def load_config() -> dict:
+def load_config() -> dict[str, Any]:
     with open(CONFIG_PATH, "r") as f:
         return yaml.safe_load(f)
 
@@ -50,13 +57,13 @@ def load_config() -> dict:
 # ---------------------------------------------------------------------------
 
 class Pipeline:
-    def __init__(self, repo: DataRepository, config: dict):
+    def __init__(self, repo: DataRepository, config: dict[str, Any]) -> None:
         self.repo = repo
         self.config = config
-        self.resolver = VendorResolver(config)
-        self.scorer = VendorScorer(config)
+        self.resolver  = VendorResolver(config)
+        self.scorer    = VendorScorer(VendorScoringConfig.from_dict(config.get("vendor_scoring", {})))
         self.clusterer = VendorClusterer(config)
-        self.detector = AnomalyDetector(config)
+        self.detector  = AnomalyDetector(config)
 
     def run(self, run_id: int, triggered_by: str = "SYSTEM") -> None:
         start_ms = int(time.time() * 1000)
@@ -76,13 +83,13 @@ class Pipeline:
 
             # 3. Attach canonical names to raw data
             logger.info("Step 3/7: Attaching canonical vendor names...")
-            name_map = mapping_df.set_index("RawVendorName")["CanonicalVendorName"].to_dict()
-            raw_df["CanonicalVendorName"] = raw_df["Vendor"].map(name_map).fillna(raw_df["Vendor"])
+            name_map = mapping_df.set_index("RawVendorName")[DataSourceColumns.CANONICAL_VENDOR].to_dict()
+            raw_df[DataSourceColumns.CANONICAL_VENDOR] = raw_df[DataSourceColumns.VENDOR].map(name_map).fillna(raw_df[DataSourceColumns.VENDOR])
 
             # 4. Clean categories (normalise NULL sentinels)
             null_sentinels = {"NULL", "None", "nan", ""}
-            raw_df["Category"] = raw_df["Category"].where(
-                ~raw_df["Category"].astype(str).isin(null_sentinels), other=None
+            raw_df[DataSourceColumns.CATEGORY] = raw_df[DataSourceColumns.CATEGORY].where(
+                ~raw_df[DataSourceColumns.CATEGORY].astype(str).isin(null_sentinels), other=None
             )
 
             # 5. Vendor scoring

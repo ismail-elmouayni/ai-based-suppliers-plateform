@@ -13,43 +13,58 @@ NaN → column median before model fitting.
 from __future__ import annotations
 
 import logging
-from typing import Optional
+from enum import StrEnum
+from typing import Any
 
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import IsolationForest
 
+from config_types import AnomalyConfig
+from data_source_columns import DataSourceColumns
+
 logger = logging.getLogger(__name__)
 
-SEVERITY_HIGH = "HIGH"
-SEVERITY_MEDIUM = "MEDIUM"
-SEVERITY_LOW = "LOW"
+
+class Severity(StrEnum):
+    """Anomaly severity levels.  ``StrEnum`` guarantees ``str(member) == member.value``
+    across all Python versions — backward-compatible with DB writes and tests."""
+
+    HIGH   = "HIGH"
+    MEDIUM = "MEDIUM"
+    LOW    = "LOW"
+
+
+# Backward-compatible aliases (tests and callers import these by name)
+SEVERITY_HIGH = Severity.HIGH
+SEVERITY_MEDIUM = Severity.MEDIUM
+SEVERITY_LOW = Severity.LOW
 
 
 class AnomalyDetector:
-    def __init__(self, config: dict):
-        ad_cfg = config.get("anomaly_detection", {})
-        self.contamination = float(ad_cfg.get("contamination_factor", 0.05))
-        self.severity_high_z = float(ad_cfg.get("severity_high_zscore", 3.0))
-        self.severity_medium_z = float(ad_cfg.get("severity_medium_zscore", 2.0))
-        self.n_estimators = int(ad_cfg.get("n_estimators", 100))
-        self.random_state = int(ad_cfg.get("random_state", 42))
+    def __init__(self, config: dict[str, Any]) -> None:
+        cfg = AnomalyConfig.from_dict(config.get("anomaly_detection", {}))
+        self.contamination    = cfg.contamination_factor
+        self.severity_high_z  = cfg.severity_high_zscore
+        self.severity_medium_z = cfg.severity_medium_zscore
+        self.n_estimators     = cfg.n_estimators
+        self.random_state     = cfg.random_state
 
     # ------------------------------------------------------------------
     # Feature engineering
     # ------------------------------------------------------------------
 
-    def _build_features(self, df: pd.DataFrame) -> pd.DataFrame:
+    def _build_features(self, df: pd.DataFrame) -> tuple[pd.DataFrame, pd.Series]:
         feat = df.copy()
 
         # Spend gap
-        feat["SpendGap"] = feat["Spend"].fillna(0) - feat["Original_Spend"].fillna(0)
+        feat["SpendGap"] = feat[DataSourceColumns.SPEND].fillna(0) - feat[DataSourceColumns.ORIGINAL_SPEND].fillna(0)
 
         # SpendGapPct — handle zero original spend
-        orig = feat["Original_Spend"].fillna(0).abs().replace(0, np.nan)
+        orig = feat[DataSourceColumns.ORIGINAL_SPEND].fillna(0).abs().replace(0, np.nan)
         feat["SpendGapPct"] = (feat["SpendGap"] / orig).clip(-10, 10).fillna(0)
 
-        feature_cols = ["SpendGap", "SpendGapPct", "Spend", "Saving_Pct"]
+        feature_cols = ["SpendGap", "SpendGapPct", DataSourceColumns.SPEND, DataSourceColumns.SAVING_PERCENT]
         X = feat[feature_cols].copy()
 
         # Replace NaN with column median
@@ -68,10 +83,10 @@ class AnomalyDetector:
         z = pd.Series(0.0, index=df.index)
 
         group_cols = []
-        if "CanonicalVendorName" in df.columns:
-            group_cols.append("CanonicalVendorName")
-        if "Category" in df.columns:
-            group_cols.append("Category")
+        if DataSourceColumns.CANONICAL_VENDOR in df.columns:
+            group_cols.append(DataSourceColumns.CANONICAL_VENDOR)
+        if DataSourceColumns.CATEGORY in df.columns:
+            group_cols.append(DataSourceColumns.CATEGORY)
 
         if group_cols:
             grouped = df.groupby(group_cols, group_keys=False)
@@ -93,13 +108,13 @@ class AnomalyDetector:
 
         return z
 
-    def _assign_severity(self, z: float) -> str:
+    def _assign_severity(self, z: float) -> Severity:
         az = abs(z)
         if az >= self.severity_high_z:
-            return SEVERITY_HIGH
+            return Severity.HIGH
         if az >= self.severity_medium_z:
-            return SEVERITY_MEDIUM
-        return SEVERITY_LOW
+            return Severity.MEDIUM
+        return Severity.LOW
 
     # ------------------------------------------------------------------
     # Reason string
@@ -170,19 +185,19 @@ class AnomalyDetector:
         for idx in df.index[flagged_mask]:
             row = df.loc[idx]
             z = float(z_scores.loc[idx])
-            vendor = str(row.get("CanonicalVendorName", ""))
-            category = str(row.get("Category") or "")
+            vendor = str(row.get(DataSourceColumns.CANONICAL_VENDOR, ""))
+            category = str(row.get(DataSourceColumns.CATEGORY) or "")
             gap = float(spend_gap.loc[idx])
 
             rows.append(
                 {
                     "RunId": run_id,
-                    "SourceRecordId": row.get("Id"),
-                    "PO_Number": row.get("PO_Number"),
+                    "SourceRecordId": row.get(DataSourceColumns.ID),
+                    "PO_Number": row.get(DataSourceColumns.PURCHASE_ORDERS_NUMBER),
                     "CanonicalVendorName": vendor,
                     "Category": category if category not in {"None", "nan", ""} else None,
-                    "Original_Spend": row.get("Original_Spend"),
-                    "Spend": row.get("Spend"),
+                    "Original_Spend": row.get(DataSourceColumns.ORIGINAL_SPEND),
+                    "Spend": row.get(DataSourceColumns.SPEND),
                     "SpendGap": gap,
                     "AnomalyScore": round(float(anomaly_scores[df_positions[idx]]), 6),
                     "ZScore": round(z, 4),

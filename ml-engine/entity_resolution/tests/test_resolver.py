@@ -3,6 +3,7 @@
 import pytest
 import pandas as pd
 from entity_resolution.resolver import VendorResolver
+from data_source_columns import DataSourceColumns
 
 CONFIG = {
     "entity_resolution": {
@@ -17,7 +18,7 @@ CONFIG = {
 def make_df(vendors, po_prefix="PO"):
     rows = []
     for i, v in enumerate(vendors):
-        rows.append({"Vendor": v, "PO_Number": f"{po_prefix}-{i:03d}"})
+        rows.append({DataSourceColumns.VENDOR: v, DataSourceColumns.PURCHASE_ORDERS_NUMBER: f"{po_prefix}-{i:03d}"})
     return pd.DataFrame(rows)
 
 
@@ -44,7 +45,7 @@ class TestVendorResolver:
         for i, v in enumerate(variants):
             count = 10 if v == "TELEPERFORMANCE SE" else 1
             for j in range(count):
-                rows.append({"Vendor": v, "PO_Number": f"PO-{v[:4]}-{j}"})
+                rows.append({DataSourceColumns.VENDOR: v, DataSourceColumns.PURCHASE_ORDERS_NUMBER: f"PO-{v[:4]}-{j}"})
         df = pd.DataFrame(rows)
         result = self.resolver.resolve(df)
 
@@ -60,8 +61,8 @@ class TestVendorResolver:
         # More POs for plain name
         rows = []
         for j in range(5):
-            rows.append({"Vendor": "TIGMAD CONSTRUCTION", "PO_Number": f"PO-TIG-{j}"})
-        rows.append({"Vendor": "TIGMAD CONSTRUCTION SARL", "PO_Number": "PO-TIG-S-0"})
+            rows.append({DataSourceColumns.VENDOR: "TIGMAD CONSTRUCTION", DataSourceColumns.PURCHASE_ORDERS_NUMBER: f"PO-TIG-{j}"})
+        rows.append({DataSourceColumns.VENDOR: "TIGMAD CONSTRUCTION SARL", DataSourceColumns.PURCHASE_ORDERS_NUMBER: "PO-TIG-S-0"})
         df = pd.DataFrame(rows)
         result = self.resolver.resolve(df)
         mapped = result.set_index("RawVendorName")["CanonicalVendorName"]
@@ -84,8 +85,8 @@ class TestVendorResolver:
     def test_null_vendor_name_handled(self):
         """Rows with null Vendor are dropped gracefully."""
         df = pd.DataFrame([
-            {"Vendor": None, "PO_Number": "PO-000"},
-            {"Vendor": "VALID VENDOR", "PO_Number": "PO-001"},
+            {DataSourceColumns.VENDOR: None, DataSourceColumns.PURCHASE_ORDERS_NUMBER: "PO-000"},
+            {DataSourceColumns.VENDOR: "VALID VENDOR", DataSourceColumns.PURCHASE_ORDERS_NUMBER: "PO-001"},
         ])
         result = self.resolver.resolve(df)
         assert "VALID VENDOR" in result["RawVendorName"].values
@@ -105,6 +106,6 @@ class TestVendorResolver:
 
     def test_empty_dataframe(self):
         """Empty input returns empty result without error."""
-        df = pd.DataFrame(columns=["Vendor", "PO_Number"])
+        df = pd.DataFrame(columns=[DataSourceColumns.VENDOR, DataSourceColumns.PURCHASE_ORDERS_NUMBER])
         result = self.resolver.resolve(df)
         assert result.empty

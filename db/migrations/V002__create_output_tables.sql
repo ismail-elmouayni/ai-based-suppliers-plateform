@@ -45,7 +45,7 @@ BEGIN
         RawSavingPct        DECIMAL(10,8)       NULL,
         RawTotalSpend       DECIMAL(18,4)       NULL,
         RawSpecialization   DECIMAL(8,6)        NULL,
-        POCount             INT                 NOT NULL,
+        PurchaseCount       INT                 NOT NULL,
         CreatedAt           DATETIME2           NOT NULL DEFAULT SYSUTCDATETIME()
     );
 END;

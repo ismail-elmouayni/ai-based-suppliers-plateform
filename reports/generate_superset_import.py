@@ -212,7 +212,7 @@ def make_vendor_scores_ds() -> dict:
         _col("RawSavingPct",        "DECIMAL(10,8)"),
         _col("RawTotalSpend",       "DECIMAL(18,4)"),
         _col("RawSpecialization",   "DECIMAL(8,6)"),
-        _col("POCount",             "INT"),
+        _col("PurchaseCount",          "INT"),
         _col("CreatedAt",           "DATETIME2", is_dttm=True),
     ])
 
@@ -275,7 +275,7 @@ def make_vendor_table_chart() -> dict:
     return _chart("Vendor Scores", "table", {
         "adhoc_filters": [],
         "all_columns": ["CanonicalVendorName", "Category", "CompositeScore",
-                        "PerformanceBand", "POCount", "RawSavingPct", "RawTotalSpend"],
+                        "PerformanceBand", "PurchaseCount", "RawSavingPct", "RawTotalSpend"],
         "order_desc": True, "row_limit": 200,
         "time_range": "No filter", "include_search": True, "show_cell_bars": False,
     }, DS_VENDOR_UUID, CH_VENDOR_UUID)

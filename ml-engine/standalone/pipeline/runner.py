@@ -43,9 +43,11 @@ from entity_resolution.resolver import VendorResolver     # noqa: E402
 from vendor_scoring.scorer import VendorScorer             # noqa: E402
 from consolidation.clusterer import VendorClusterer        # noqa: E402
 from anomaly_detection.detector import AnomalyDetector     # noqa: E402
+from config_types import VendorScoringConfig               # noqa: E402
 
 from standalone.io.excel_reader import ExcelReader         # noqa: E402
 from standalone.io.excel_writer import ExcelWriter         # noqa: E402
+from data_source_columns import DataSourceColumns          # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -66,10 +68,10 @@ class StandalonePipeline:
 
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
-        self.resolver = VendorResolver(config)
-        self.scorer = VendorScorer(config)
+        self.resolver  = VendorResolver(config)
+        self.scorer    = VendorScorer(VendorScoringConfig.from_dict(config.get("vendor_scoring", {})))
         self.clusterer = VendorClusterer(config)
-        self.detector = AnomalyDetector(config)
+        self.detector  = AnomalyDetector(config)
 
     # ------------------------------------------------------------------
     # Public API
@@ -156,7 +158,7 @@ class StandalonePipeline:
 
     def _resolve_vendors(self, raw_df: pd.DataFrame) -> pd.DataFrame:
         mapping_df = self.resolver.resolve(raw_df, run_id=0)
-        unique_canonical = mapping_df["CanonicalVendorName"].nunique()
+        unique_canonical = mapping_df[DataSourceColumns.CANONICAL_VENDOR].nunique()
         logger.info(
             "  Resolved %d raw names → %d canonical vendors.",
             len(mapping_df), unique_canonical,
@@ -167,17 +169,17 @@ class StandalonePipeline:
         self, raw_df: pd.DataFrame, mapping_df: pd.DataFrame
     ) -> pd.DataFrame:
         name_map = (
-            mapping_df.set_index("RawVendorName")["CanonicalVendorName"].to_dict()
+            mapping_df.set_index("RawVendorName")[DataSourceColumns.CANONICAL_VENDOR].to_dict()
         )
         df = raw_df.copy()
-        df["CanonicalVendorName"] = df["Vendor"].map(name_map).fillna(df["Vendor"])
+        df[DataSourceColumns.CANONICAL_VENDOR] = df[DataSourceColumns.VENDOR].map(name_map).fillna(df[DataSourceColumns.VENDOR])
         return df
 
     def _clean_categories(self, raw_df: pd.DataFrame) -> pd.DataFrame:
         df = raw_df.copy()
-        df["Category"] = df["Category"].where(
-            ~df["Category"].astype(str).isin(_NULL_SENTINELS), other=None
-        )
+        df[DataSourceColumns.CATEGORY] = df[DataSourceColumns.CATEGORY].where(
+                ~df[DataSourceColumns.CATEGORY].astype(str).isin(_NULL_SENTINELS), other=None
+            )
         return df
 
     def _score_vendors(self, raw_df: pd.DataFrame) -> pd.DataFrame:
@@ -208,8 +210,8 @@ class StandalonePipeline:
         flags_df: pd.DataFrame,
     ) -> None:
         stats = {
-            "total_vendors": mapping_df["CanonicalVendorName"].nunique(),
-            "total_spend":   raw_df["Spend"].sum() if "Spend" in raw_df.columns else 0,
+            "total_vendors": mapping_df[DataSourceColumns.CANONICAL_VENDOR].nunique(),
+            "total_spend":   raw_df[DataSourceColumns.SPEND].sum() if DataSourceColumns.SPEND in raw_df.columns else 0,
             "anomaly_count": len(flags_df),
             "cluster_count": len(clusters_df),
         }

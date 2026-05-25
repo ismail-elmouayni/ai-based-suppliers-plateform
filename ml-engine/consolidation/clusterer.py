@@ -15,24 +15,27 @@ Steps:
 from __future__ import annotations
 
 import logging
-from typing import Tuple
+from typing import Any
 
 import numpy as np
 import pandas as pd
 from sklearn.cluster import KMeans, DBSCAN
 from sklearn.preprocessing import StandardScaler
 
+from config_types import ConsolidationConfig
+from data_source_columns import DataSourceColumns
+
 logger = logging.getLogger(__name__)
 
 
 class VendorClusterer:
-    def __init__(self, config: dict):
-        c_cfg = config.get("consolidation", {})
-        self.min_cluster_size: int = int(c_cfg.get("min_cluster_size", 2))
-        self.algorithm: str = str(c_cfg.get("algorithm", "kmeans")).lower()
-        self.n_clusters = c_cfg.get("n_clusters", "auto")
-        self.dbscan_eps: float = float(c_cfg.get("dbscan_eps", 0.5))
-        self.dbscan_min_samples: int = int(c_cfg.get("dbscan_min_samples", 2))
+    def __init__(self, config: dict[str, Any]) -> None:
+        cfg = ConsolidationConfig.from_dict(config.get("consolidation", {}))
+        self.min_cluster_size: int   = cfg.min_cluster_size
+        self.algorithm: str          = cfg.algorithm
+        self.n_clusters              = cfg.n_clusters
+        self.dbscan_eps: float       = cfg.dbscan_eps
+        self.dbscan_min_samples: int = cfg.dbscan_min_samples
 
     # ------------------------------------------------------------------
     # Elbow method
@@ -76,7 +79,7 @@ class VendorClusterer:
     # Public API
     # ------------------------------------------------------------------
 
-    def cluster(self, df: pd.DataFrame, run_id: int) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    def cluster(self, df: pd.DataFrame, run_id: int) -> tuple[pd.DataFrame, pd.DataFrame]:
         """
         Cluster vendors by spend pattern.
 
@@ -88,17 +91,17 @@ class VendorClusterer:
             return pd.DataFrame(), pd.DataFrame()
 
         # Filter NULL categories
-        df = df[df["Category"].notna()].copy()
+        df = df[df[DataSourceColumns.CATEGORY].notna()].copy()
         null_sentinels = {"NULL", "None", "nan", ""}
-        df = df[~df["Category"].astype(str).isin(null_sentinels)].copy()
+        df = df[~df[DataSourceColumns.CATEGORY].astype(str).isin(null_sentinels)].copy()
 
-        if df.empty or df["CanonicalVendorName"].nunique() < 2:
+        if df.empty or df[DataSourceColumns.CANONICAL_VENDOR].nunique() < 2:
             logger.warning("Not enough vendors to cluster after filtering.")
             return pd.DataFrame(), pd.DataFrame()
 
         # Vendor × category spend pivot
         pivot = (
-            df.groupby(["CanonicalVendorName", "Category"])["Spend"]
+            df.groupby([DataSourceColumns.CANONICAL_VENDOR, DataSourceColumns.CATEGORY])[DataSourceColumns.SPEND]
             .sum()
             .unstack(fill_value=0.0)
         )
@@ -124,13 +127,13 @@ class VendorClusterer:
 
         # Vendor-level info
         vendor_total_spend = (
-            df.groupby("CanonicalVendorName")["Spend"].sum().reindex(vendors).fillna(0)
+            df.groupby(DataSourceColumns.CANONICAL_VENDOR)[DataSourceColumns.SPEND].sum().reindex(vendors).fillna(0)
         )
         vendor_saving_pct = (
-            df.groupby("CanonicalVendorName")["Saving_Pct"].mean().reindex(vendors).fillna(0)
+            df.groupby(DataSourceColumns.CANONICAL_VENDOR)[DataSourceColumns.SAVING_PERCENT].mean().reindex(vendors).fillna(0)
         )
         vendor_categories = (
-            df.groupby("CanonicalVendorName")["Category"]
+            df.groupby(DataSourceColumns.CANONICAL_VENDOR)[DataSourceColumns.CATEGORY]
             .apply(lambda x: ", ".join(sorted(x.unique())))
             .reindex(vendors)
             .fillna("")

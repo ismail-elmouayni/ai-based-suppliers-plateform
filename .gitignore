@@ -1,1 +1,14 @@
 api/SupplierIntelligence.Api/obj/*
+ml-engine/entity_resolution/__pycache__/__init__.cpython-314.pyc
+ml-engine/entity_resolution/__pycache__/resolver.cpython-314.pyc
+ml-engine/__pycache__/config_types.cpython-314.pyc
+ml-engine/standalone/__pycache__/__init__.cpython-314.pyc
+ml-engine/standalone/io/__pycache__/__init__.cpython-314.pyc
+ml-engine/standalone/io/__pycache__/excel_reader.cpython-314.pyc
+ml-engine/standalone/io/__pycache__/excel_writer.cpython-314.pyc
+ml-engine/standalone/pipeline/__pycache__/__init__.cpython-314.pyc
+ml-engine/standalone/pipeline/__pycache__/runner.cpython-314.pyc
+ml-engine/vendor_scoring/__pycache__/__init__.cpython-314.pyc
+ml-engine/vendor_scoring/__pycache__/scorer.cpython-314.pyc
+ml-engine/vendor_scoring/tests/__pycache__/__init__.cpython-314.pyc
+ml-engine/vendor_scoring/tests/__pycache__/test_scorer.cpython-314-pytest-9.0.3.pyc

@@ -14,23 +14,24 @@ from __future__ import annotations
 import logging
 import re
 from collections import defaultdict
-from typing import Dict, List, Optional
+from typing import Any
 
 import pandas as pd
 from rapidfuzz import fuzz, process
+
+from config_types import EntityResolutionConfig
+from data_source_columns import DataSourceColumns
 
 logger = logging.getLogger(__name__)
 
 
 class VendorResolver:
-    def __init__(self, config: dict):
-        er_cfg = config.get("entity_resolution", {})
-        self.match_threshold: float = er_cfg.get("match_threshold", 85)
-        self.top_k_candidates: int = er_cfg.get("top_k_candidates", 5)
-        self.normalize_before_match: bool = er_cfg.get("normalize_before_match", True)
-        self.strip_suffixes: List[str] = [
-            s.upper() for s in er_cfg.get("strip_suffixes", [])
-        ]
+    def __init__(self, config: dict[str, Any]) -> None:
+        cfg = EntityResolutionConfig.from_dict(config.get("entity_resolution", {}))
+        self.match_threshold: float        = cfg.match_threshold
+        self.top_k_candidates: int         = cfg.top_k_candidates
+        self.normalize_before_match: bool  = cfg.normalize_before_match
+        self.strip_suffixes: list[str]     = list(cfg.strip_suffixes)
 
     # ------------------------------------------------------------------
     # Normalisation
@@ -54,20 +55,20 @@ class VendorResolver:
     # Clustering via union-find
     # ------------------------------------------------------------------
 
-    def _find(self, parent: Dict[str, str], x: str) -> str:
+    def _find(self, parent: dict[str, str], x: str) -> str:
         while parent[x] != x:
             parent[x] = parent[parent[x]]
             x = parent[x]
         return x
 
-    def _union(self, parent: Dict[str, str], x: str, y: str) -> None:
+    def _union(self, parent: dict[str, str], x: str, y: str) -> None:
         rx, ry = self._find(parent, x), self._find(parent, y)
         if rx != ry:
             parent[ry] = rx
 
     def _cluster_names(
-        self, unique_names: List[str], po_counts: Dict[str, int]
-    ) -> Dict[str, str]:
+        self, unique_names: list[str], po_counts: dict[str, int]
+    ) -> dict[str, str]:
         """
         Return {raw_name: canonical_name} mapping.
 
@@ -78,7 +79,7 @@ class VendorResolver:
             return {}
 
         normalized = [self._normalize(n) for n in unique_names]
-        parent = {n: n for n in unique_names}
+        parent: dict[str, str] = {n: n for n in unique_names}
 
         # Build pairwise score matrix via cdist (more efficient than nested loops)
         from rapidfuzz.process import cdist as rfd_cdist
@@ -98,13 +99,13 @@ class VendorResolver:
                     self._union(parent, unique_names[i], unique_names[j])
 
         # Group by root
-        groups: Dict[str, List[str]] = defaultdict(list)
+        groups: dict[str, list[str]] = defaultdict(list)
         for name in unique_names:
             root = self._find(parent, name)
             groups[root].append(name)
 
         # Canonical = highest PO-count member
-        mapping: Dict[str, str] = {}
+        mapping: dict[str, str] = {}
         for members in groups.values():
             canonical = max(members, key=lambda n: po_counts.get(n, 0))
             for m in members:
@@ -117,7 +118,7 @@ class VendorResolver:
     # ------------------------------------------------------------------
 
     def resolve(
-        self, df: pd.DataFrame, run_id: Optional[int] = None
+        self, df: pd.DataFrame, run_id: int | None = None
     ) -> pd.DataFrame:
         """
         Resolve vendor names in *df* (must have 'Vendor' and 'PO_Number' columns).
@@ -126,7 +127,7 @@ class VendorResolver:
             RawVendorName, CanonicalVendorName, MatchScore, MatchMethod,
             ResolutionRunId
         """
-        if df.empty or "Vendor" not in df.columns:
+        if df.empty or DataSourceColumns.VENDOR not in df.columns:
             logger.warning("resolve() called with empty or missing Vendor column.")
             return pd.DataFrame(
                 columns=[
@@ -139,13 +140,13 @@ class VendorResolver:
             )
 
         # PO frequency per raw vendor name
-        po_counts: Dict[str, int] = (
-            df.groupby("Vendor")["PO_Number"].nunique().to_dict()
-            if "PO_Number" in df.columns
-            else {v: 1 for v in df["Vendor"].unique()}
+        po_counts: dict[str, int] = (
+            df.groupby(DataSourceColumns.VENDOR)[DataSourceColumns.PURCHASE_ORDERS_NUMBER].nunique().to_dict()
+            if DataSourceColumns.PURCHASE_ORDERS_NUMBER in df.columns
+            else {v: 1 for v in df[DataSourceColumns.VENDOR].unique()}
         )
 
-        unique_names = [str(n) for n in df["Vendor"].dropna().unique().tolist()]
+        unique_names: list[str] = [str(n) for n in df[DataSourceColumns.VENDOR].dropna().unique().tolist()]
         logger.info(f"Resolving {len(unique_names)} unique vendor names...")
 
         mapping = self._cluster_names(unique_names, po_counts)

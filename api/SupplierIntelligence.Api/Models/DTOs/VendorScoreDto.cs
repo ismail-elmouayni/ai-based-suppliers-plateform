@@ -11,5 +11,5 @@ public class VendorScoreDto
     public decimal? RawSavingPct { get; set; }
     public decimal? RawTotalSpend { get; set; }
     public decimal? RawSpecialization { get; set; }
-    public int POCount { get; set; }
+    public int PurchaseCount { get; set; }
 }

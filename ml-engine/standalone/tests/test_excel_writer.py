@@ -42,7 +42,7 @@ def _make_scores_df(n: int = 6) -> pd.DataFrame:
             "RawSavingPct": 0.15,
             "RawTotalSpend": 100_000.0,
             "RawSpecialization": 1.0,
-            "POCount": 5,
+            "PurchaseCount": 5,
         })
     return pd.DataFrame(rows)
 

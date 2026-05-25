@@ -4,6 +4,7 @@ import pytest
 import pandas as pd
 import numpy as np
 from anomaly_detection.detector import AnomalyDetector, SEVERITY_HIGH, SEVERITY_MEDIUM, SEVERITY_LOW
+from data_source_columns import DataSourceColumns
 
 CONFIG = {
     "anomaly_detection": {
@@ -24,13 +25,13 @@ def make_normal_df(n=50, seed=42):
         orig = rng.uniform(10000, 100000)
         spend = orig * rng.uniform(0.90, 1.10)  # ±10% variation
         rows.append({
-            "Id": i + 1,
-            "PO_Number": f"PO-{i:04d}",
-            "CanonicalVendorName": f"VENDOR_{i % 5}",
-            "Category": f"CAT_{i % 3}",
-            "Original_Spend": orig,
-            "Spend": spend,
-            "Saving_Pct": rng.uniform(0.05, 0.20),
+            DataSourceColumns.ID: i + 1,
+            DataSourceColumns.PURCHASE_ORDERS_NUMBER: f"PO-{i:04d}",
+            DataSourceColumns.CANONICAL_VENDOR: f"VENDOR_{i % 5}",
+            DataSourceColumns.CATEGORY: f"CAT_{i % 3}",
+            DataSourceColumns.ORIGINAL_SPEND: orig,
+            DataSourceColumns.SPEND: spend,
+            DataSourceColumns.SAVING_PERCENT: rng.uniform(0.05, 0.20),
         })
     return pd.DataFrame(rows)
 
@@ -38,7 +39,7 @@ def make_normal_df(n=50, seed=42):
 def inject_anomaly(df, idx, multiplier=2.5):
     """Make one record's spend much higher than original."""
     df = df.copy()
-    df.loc[idx, "Spend"] = df.loc[idx, "Original_Spend"] * multiplier
+    df.loc[idx, DataSourceColumns.SPEND] = df.loc[idx, DataSourceColumns.ORIGINAL_SPEND] * multiplier
     return df
 
 
@@ -89,8 +90,8 @@ class TestAnomalyDetector:
     def test_negative_original_spend_handled(self):
         """Rows with negative Original_Spend should not raise errors."""
         df = make_normal_df(n=20)
-        df.loc[0, "Original_Spend"] = -50000.0
-        df.loc[0, "Spend"] = -45000.0
+        df.loc[0, DataSourceColumns.ORIGINAL_SPEND] = -50000.0
+        df.loc[0, DataSourceColumns.SPEND] = -45000.0
         # Should run without exception
         result = self.detector.detect(df, run_id=1)
         assert isinstance(result, pd.DataFrame)
@@ -109,7 +110,7 @@ class TestAnomalyDetector:
 
     def test_empty_df_returns_empty(self):
         """Empty input returns empty DataFrame."""
-        df = pd.DataFrame(columns=["Id", "PO_Number", "CanonicalVendorName", "Category",
-                                    "Original_Spend", "Spend", "Saving_Pct"])
+        df = pd.DataFrame(columns=[DataSourceColumns.ID, DataSourceColumns.PURCHASE_ORDERS_NUMBER, DataSourceColumns.CANONICAL_VENDOR, DataSourceColumns.CATEGORY,
+                                    DataSourceColumns.ORIGINAL_SPEND, DataSourceColumns.SPEND, DataSourceColumns.SAVING_PERCENT])
         result = self.detector.detect(df, run_id=1)
         assert result.empty

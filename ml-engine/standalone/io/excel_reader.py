@@ -26,6 +26,8 @@ from typing import Union
 
 import pandas as pd
 
+from data_source_columns import DataSourceColumns
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -36,42 +38,42 @@ PREFERRED_SHEET = "ProcurementRecords"
 
 # Canonical (internal) column names used throughout the pipeline.
 REQUIRED_COLUMNS: list[str] = [
-    "Id",
-    "Country",
-    "Vendor",
-    "Category",
-    "PO_Number",
-    "Item_Description",
-    "Original_Spend",
-    "OPEX_CAPEX",
-    "Saving",
-    "Saving_Pct",
-    "Spend",
+    DataSourceColumns.ID,
+    DataSourceColumns.COUNTRY,
+    DataSourceColumns.VENDOR,
+    DataSourceColumns.CATEGORY,
+    DataSourceColumns.PURCHASE_ORDERS_NUMBER,
+    DataSourceColumns.ITEM_DESCRIPTION,
+    DataSourceColumns.ORIGINAL_SPEND,
+    DataSourceColumns.OPEX_CAPEX,
+    DataSourceColumns.SAVING,
+    DataSourceColumns.SAVING_PERCENT,
+    DataSourceColumns.SPEND,
 ]
 
 NUMERIC_COLUMNS: list[str] = [
-    "Original_Spend",
-    "Saving",
-    "Saving_Pct",
-    "Spend",
+    DataSourceColumns.ORIGINAL_SPEND,
+    DataSourceColumns.SAVING,
+    DataSourceColumns.SAVING_PERCENT,
+    DataSourceColumns.SPEND,
 ]
 
 # Maps common enterprise export column names → canonical pipeline names.
 # Keys are compared case-insensitively after stripping whitespace.
 COLUMN_ALIASES: dict[str, str] = {
-    "po number":        "PO_Number",
-    "po_number":        "PO_Number",
-    "item description": "Item_Description",
-    "item_description": "Item_Description",
-    "original spend":   "Original_Spend",
-    "original_spend":   "Original_Spend",
-    "opex capex":       "OPEX_CAPEX",
-    "opex_capex":       "OPEX_CAPEX",
-    "saving %":         "Saving_Pct",
-    "saving_pct":       "Saving_Pct",
-    "saving pct":       "Saving_Pct",
-    "savings %":        "Saving_Pct",
-    "savings pct":      "Saving_Pct",
+    "po number":        DataSourceColumns.PURCHASE_ORDERS_NUMBER,
+    "po_number":        DataSourceColumns.PURCHASE_ORDERS_NUMBER,
+    "item description": DataSourceColumns.ITEM_DESCRIPTION,
+    "item_description": DataSourceColumns.ITEM_DESCRIPTION,
+    "original spend":   DataSourceColumns.ORIGINAL_SPEND,
+    "original_spend":   DataSourceColumns.ORIGINAL_SPEND,
+    "opex capex":       DataSourceColumns.OPEX_CAPEX,
+    "opex_capex":       DataSourceColumns.OPEX_CAPEX,
+    "saving %":         DataSourceColumns.SAVING_PERCENT,
+    "saving_pct":       DataSourceColumns.SAVING_PERCENT,
+    "saving pct":       DataSourceColumns.SAVING_PERCENT,
+    "savings %":        DataSourceColumns.SAVING_PERCENT,
+    "savings pct":      DataSourceColumns.SAVING_PERCENT,
 }
 
 

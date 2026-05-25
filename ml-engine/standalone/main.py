@@ -28,6 +28,7 @@ import argparse
 import logging
 import sys
 from pathlib import Path
+from typing import Any
 
 # ---------------------------------------------------------------------------
 # Ensure the workspace root is on sys.path so both ``standalone.*`` and the
@@ -66,7 +67,7 @@ DEFAULT_CONFIG = _WORKSPACE_ROOT / "config" / "model_config.yml"
 # Config loader
 # ---------------------------------------------------------------------------
 
-def load_config(config_path: Path) -> dict:
+def load_config(config_path: Path) -> dict[str, Any]:
     """Load and return the YAML configuration file."""
     if not config_path.exists():
         raise FileNotFoundError(

@@ -4,6 +4,7 @@ import pytest
 import pandas as pd
 import numpy as np
 from consolidation.clusterer import VendorClusterer
+from data_source_columns import DataSourceColumns
 
 CONFIG = {
     "consolidation": {
@@ -26,11 +27,11 @@ def make_df(n_vendors=6, n_categories=3, seed=42):
         for cat in categories:
             spend = rng.uniform(1000, 100000)
             rows.append({
-                "CanonicalVendorName": vendor,
-                "Category": cat,
-                "Spend": spend,
-                "Saving_Pct": rng.uniform(0.01, 0.30),
-                "PO_Number": f"PO-{vendor}-{cat}",
+                DataSourceColumns.CANONICAL_VENDOR: vendor,
+                DataSourceColumns.CATEGORY: cat,
+                DataSourceColumns.SPEND: spend,
+                DataSourceColumns.SAVING_PERCENT: rng.uniform(0.01, 0.30),
+                DataSourceColumns.PURCHASE_ORDERS_NUMBER: f"PO-{vendor}-{cat}",
             })
     return pd.DataFrame(rows)
 
@@ -56,8 +57,8 @@ class TestVendorClusterer:
         # Build data where CAT_0 clearly dominates
         rows = []
         for v in ["V1", "V2", "V3"]:
-            rows.append({"CanonicalVendorName": v, "Category": "CAT_0", "Spend": 1000000.0, "Saving_Pct": 0.10, "PO_Number": f"PO-{v}-0"})
-            rows.append({"CanonicalVendorName": v, "Category": "CAT_1", "Spend": 1.0, "Saving_Pct": 0.10, "PO_Number": f"PO-{v}-1"})
+            rows.append({DataSourceColumns.CANONICAL_VENDOR: v, DataSourceColumns.CATEGORY: "CAT_0", DataSourceColumns.SPEND: 1000000.0, DataSourceColumns.SAVING_PERCENT: 0.10, DataSourceColumns.PURCHASE_ORDERS_NUMBER: f"PO-{v}-0"})
+            rows.append({DataSourceColumns.CANONICAL_VENDOR: v, DataSourceColumns.CATEGORY: "CAT_1", DataSourceColumns.SPEND: 1.0, DataSourceColumns.SAVING_PERCENT: 0.10, DataSourceColumns.PURCHASE_ORDERS_NUMBER: f"PO-{v}-1"})
         df = pd.DataFrame(rows)
         config = dict(CONFIG)
         config["consolidation"] = dict(CONFIG["consolidation"])
@@ -85,7 +86,7 @@ class TestVendorClusterer:
 
     def test_empty_df_returns_empty(self):
         """Empty input returns empty DataFrames."""
-        df = pd.DataFrame(columns=["CanonicalVendorName", "Category", "Spend", "Saving_Pct", "PO_Number"])
+        df = pd.DataFrame(columns=[DataSourceColumns.CANONICAL_VENDOR, DataSourceColumns.CATEGORY, DataSourceColumns.SPEND, DataSourceColumns.SAVING_PERCENT, DataSourceColumns.PURCHASE_ORDERS_NUMBER])
         clusters, members = self.clusterer.cluster(df, run_id=1)
         assert clusters.empty
         assert members.empty
@@ -93,7 +94,7 @@ class TestVendorClusterer:
     def test_null_category_excluded(self):
         """Rows with NULL category are excluded before clustering."""
         df = make_df(n_vendors=6, n_categories=2)
-        df.loc[df["Category"] == "CAT_0", "Category"] = None
+        df.loc[df[DataSourceColumns.CATEGORY] == "CAT_0", DataSourceColumns.CATEGORY] = None
         clusters, members = self.clusterer.cluster(df, run_id=1)
         # Should still produce some clusters from remaining categories
         # Just verify no crash and NoneType not in DominantCategory
