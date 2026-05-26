@@ -1,0 +1,8 @@
+{
+    "chat.tools.terminal.autoApprove": {
+        "/^python -m pytest anomaly_detection/tests/ vendor_scoring/tests/ standalone/tests/ -v --tb=short 2>&1$/": {
+            "approve": true,
+            "matchCommandLine": true
+        }
+    }
+}

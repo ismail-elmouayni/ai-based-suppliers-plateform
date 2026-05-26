@@ -1,0 +1,94 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003" DefaultTargets="Build">
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+    <SchemaVersion>2.0</SchemaVersion>
+    <ProjectGuid>{ac290a9f-d7aa-4616-8c23-0ae954372798}</ProjectGuid>
+    <ProjectHome />
+    <StartupFile>main.py</StartupFile>
+    <SearchPath />
+    <WorkingDirectory>.</WorkingDirectory>
+    <OutputPath>.</OutputPath>
+    <ProjectTypeGuids>{888888a0-9f3d-457c-b088-3a5042f75d52}</ProjectTypeGuids>
+    <LaunchProvider>Standard Python launcher</LaunchProvider>
+    <InterpreterId>Global|PythonCore|3.14</InterpreterId>
+    <TestFramework>Pytest</TestFramework>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)' == 'Debug'" />
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'" />
+  <PropertyGroup>
+    <VisualStudioVersion Condition=" '$(VisualStudioVersion)' == '' ">10.0</VisualStudioVersion>
+  </PropertyGroup>
+  <ItemGroup>
+    <Content Include="requirements.txt" />
+    <Content Include="standalone\requirements.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="anomaly_detection\anomaly_detector.py" />
+    <Compile Include="anomaly_detection\anomaly_flag.py" />
+    <Compile Include="anomaly_detection\tests\test_compute_zscores.py" />
+    <Compile Include="anomaly_detection\tests\test_detector.py" />
+    <Compile Include="anomaly_detection\tests\__init__.py" />
+    <Compile Include="anomaly_detection\__init__.py" />
+    <Compile Include="config_types.py" />
+    <Compile Include="consolidation\cluster_result.py" />
+    <Compile Include="consolidation\tests\test_vendor_clusterer.py" />
+    <Compile Include="consolidation\tests\__init__.py" />
+    <Compile Include="consolidation\vendor_clusterer.py" />
+    <Compile Include="consolidation\__init__.py" />
+    <Compile Include="core\raw_data_processing.py" />
+    <Compile Include="core\series_processing.py" />
+    <Compile Include="core\string_processing.py" />
+    <Compile Include="core\__init__.py" />
+    <Compile Include="data_source_columns.py" />
+    <Compile Include="db\repository.py" />
+    <Compile Include="db\__init__.py" />
+    <Compile Include="entity_resolution\tests\test_vendor_resolver.py" />
+    <Compile Include="entity_resolution\tests\__init__.py" />
+    <Compile Include="entity_resolution\vendor_mapping.py" />
+    <Compile Include="entity_resolution\vendor_resolver.py" />
+    <Compile Include="entity_resolution\__init__.py" />
+    <Compile Include="main.py" />
+    <Compile Include="protocols.py" />
+    <Compile Include="standalone\io\excel_reader.py" />
+    <Compile Include="standalone\io\excel_writer.py" />
+    <Compile Include="standalone\io\__init__.py" />
+    <Compile Include="standalone\main.py" />
+    <Compile Include="standalone\pipeline\runner.py" />
+    <Compile Include="standalone\pipeline\__init__.py" />
+    <Compile Include="standalone\tests\conftest.py" />
+    <Compile Include="standalone\tests\test_excel_reader.py" />
+    <Compile Include="standalone\tests\test_excel_writer.py" />
+    <Compile Include="standalone\tests\test_pipeline_runner.py" />
+    <Compile Include="standalone\tests\__init__.py" />
+    <Compile Include="standalone\__init__.py" />
+    <Compile Include="tests\test_integration.py" />
+    <Compile Include="tests\__init__.py" />
+    <Compile Include="vendor_scoring\tests\test_scorer.py" />
+    <Compile Include="vendor_scoring\tests\__init__.py" />
+    <Compile Include="vendor_scoring\vendor_score.py" />
+    <Compile Include="vendor_scoring\vendor_scorer.py" />
+    <Compile Include="vendor_scoring\__init__.py" />
+  </ItemGroup>
+  <ItemGroup>
+    <Folder Include="anomaly_detection" />
+    <Folder Include="anomaly_detection\tests" />
+    <Folder Include="consolidation" />
+    <Folder Include="consolidation\tests" />
+    <Folder Include="core" />
+    <Folder Include="db" />
+    <Folder Include="entity_resolution" />
+    <Folder Include="entity_resolution\tests" />
+    <Folder Include="standalone" />
+    <Folder Include="standalone\io" />
+    <Folder Include="standalone\pipeline" />
+    <Folder Include="standalone\tests" />
+    <Folder Include="tests" />
+    <Folder Include="vendor_scoring" />
+    <Folder Include="vendor_scoring\tests" />
+  </ItemGroup>
+  <ItemGroup>
+    <InterpreterReference Include="Global|PythonCore|3.14" />
+  </ItemGroup>
+  <Import Project="$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v$(VisualStudioVersion)\Python Tools\Microsoft.PythonTools.targets" />
+</Project>
