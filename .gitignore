@@ -1,3 +1,6 @@
 api/SupplierIntelligence.Api/obj/*
 *.pyc
 api/SupplierIntelligence.Api/obj/Debug/net8.0/*
+/ml-engine/.vs/ml-engine
+/ml-engine/data.xlsx
+/ml-engine/output.xlsx
