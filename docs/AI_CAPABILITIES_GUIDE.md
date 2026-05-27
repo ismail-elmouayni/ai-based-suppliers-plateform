@@ -362,7 +362,7 @@ numbers are calculated:
 |--------|---------------------|
 | **Savings performance** | Average saving % across all purchase orders for this vendor and category |
 | **Spend volume** | Total € spend across all purchase orders for this vendor and category |
-| **Category focus** | This vendor's spend in this category ÷ their total spend across all categories |
+| **Category focus or specialization** | This vendor's spend in this category ÷ their total spend across all categories |
 
 Category focus rewards specialists: a vendor doing 90% of their business in IT Software
 will score higher on this signal than a generalist vendor spread across 10 categories.
@@ -404,6 +404,62 @@ graph TD
     C["Category focus norm = 0.80\n× weight 0.20\n= 0.160"] --> D
     D["Sum = 0.497"] --> E["× 100 = 49.7\n→ 🟡 AMBER"]
 ```
+
+#### Step 4 — Simple Worked Example (Business-Friendly)
+
+Below is a theoretical example that follows the same calculation principles used by the
+pipeline, but explained without code.
+
+Assume we are scoring vendors, in same category with default weights:
+
+- Savings: 50%
+- Spend: 30%
+- Category focus: 20%
+- Minimum data rule: at least 3 purchase orders to receive a score
+
+Raw data for this category:
+
+| Vendor | Avg saving % | Total spend (€) | Specialization | PO count |
+|--------|--------------|-----------------|----------------|----------|
+| Vendor A | 12% | 500,000 | 80% | 10 |
+| Vendor B | 8% | 900,000 | 40% | 7 |
+| Vendor C | 15% | 300,000 | 60% | 5 |
+| Vendor D | 11% | 200,000 | 70% | 2 |
+
+Vendor D has only 2 POs, so it is marked **INSUFFICIENT DATA** and does not receive a
+composite score.
+
+Now normalise A, B, C only (0 to 1 scale for each signal):
+
+- Savings range = 8% to 15%
+- Spend range = 300,000 to 900,000
+- Focus range = 40% to 80%
+
+Normalised values:
+
+| Vendor | Savings norm | Spend norm | Focus norm |
+|--------|--------------|------------|------------|
+| Vendor A | (12-8)/(15-8) = 0.57 | (500-300)/(900-300) = 0.33 | (80-40)/(80-40) = 1.00 |
+| Vendor B | (8-8)/(15-8) = 0.00 | (900-300)/(900-300) = 1.00 | (40-40)/(80-40) = 0.00 |
+| Vendor C | (15-8)/(15-8) = 1.00 | (300-300)/(900-300) = 0.00 | (60-40)/(80-40) = 0.50 |
+
+If all vendors were identical on one signal (same min and max), that signal would contribute
+equally to everyone instead of creating artificial differences.
+
+Apply weighted blend and scale to 100:
+
+- Vendor A = ((0.50×0.57) + (0.30×0.33) + (0.20×1.00)) × 100 = **58.40** → 🟡 AMBER
+- Vendor B = ((0.50×0.00) + (0.30×1.00) + (0.20×0.00)) × 100 = **30.00** → 🔴 RED
+- Vendor C = ((0.50×1.00) + (0.30×0.00) + (0.20×0.50)) × 100 = **60.00** → 🟡 AMBER
+
+Band assignment then uses thresholds:
+
+- 70+ = GREEN
+- 40 to 69.99 = AMBER
+- below 40 = RED
+
+This is why a vendor can have excellent savings but still not be GREEN if spend and/or
+category focus are weak versus peers.
 
 #### Why Scores are Relative, Not Absolute
 
