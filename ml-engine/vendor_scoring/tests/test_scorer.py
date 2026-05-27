@@ -47,13 +47,61 @@ class TestVendorScorer:
         assert all(s.composite_score >= 0 for s in scored)
         assert all(s.composite_score <= 100 for s in scored)
 
+    def test_score_should_return_right_scores(self):
+        """Verify exact composite scores on a deterministic, easy-to-read input."""
+        rows = []
+        for i in range(3):
+            rows.append({
+                DataSourceColumns.CANONICAL_VENDOR: "LOW",
+                DataSourceColumns.CATEGORY: "IT",
+                DataSourceColumns.SAVING_PERCENT: 0.10,
+                DataSourceColumns.SPEND: 100.0,
+                DataSourceColumns.PURCHASE_ORDERS_NUMBER: f"PO-LOW-{i}",
+            })
+            rows.append({
+                DataSourceColumns.CANONICAL_VENDOR: "HIGH",
+                DataSourceColumns.CATEGORY: "IT",
+                DataSourceColumns.SAVING_PERCENT: 0.30,
+                DataSourceColumns.SPEND: 300.0,
+                DataSourceColumns.PURCHASE_ORDERS_NUMBER: f"PO-HIGH-{i}",
+            })
+
+        df = pd.DataFrame(rows)
+        result = self.scorer.score(df, run_id=1)
+
+        by_vendor = {s.canonical_vendor_name: s for s in result}
+
+        # With one category per vendor, raw specialization is 1.0 for both vendors,
+        # so specialization normalization returns 0.5 for each (min == max).
+        # LOW:  (0*0.50 + 0*0.30 + 0.5*0.20) * 100 = 10.00
+        # HIGH: (1*0.50 + 1*0.30 + 0.5*0.20) * 100 = 90.00
+        assert by_vendor["LOW"].raw_purchase_count == 3
+        assert by_vendor["HIGH"].raw_purchase_count == 3
+
+        assert np.isclose(by_vendor["LOW"].saving_pct_norm, 0.0)
+        assert np.isclose(by_vendor["LOW"].spend_norm, 0.0)
+        assert np.isclose(by_vendor["LOW"].specialization_norm, 0.5)
+
+        assert np.isclose(by_vendor["HIGH"].saving_pct_norm, 1.0)
+        assert np.isclose(by_vendor["HIGH"].spend_norm, 1.0)
+        assert np.isclose(by_vendor["HIGH"].specialization_norm, 0.5)
+
+        assert by_vendor["LOW"].composite_score == 10.0
+        assert by_vendor["HIGH"].composite_score == 90.0
+
     def test_band_green(self):
         """Vendor with best metrics should receive GREEN band."""
         # Three vendors; one with top saving pct
         rows = []
+
         for v, sp, spend in [("BEST", 0.99, 500000), ("MID", 0.10, 50000), ("POOR", 0.01, 5000)]:
             for i in range(5):
-                rows.append({DataSourceColumns.CANONICAL_VENDOR: v, DataSourceColumns.CATEGORY: "IT", DataSourceColumns.SAVING_PERCENT: sp, DataSourceColumns.SPEND: spend, DataSourceColumns.PURCHASE_ORDERS_NUMBER: f"PO-{v}-{i}"})
+                rows.append({DataSourceColumns.CANONICAL_VENDOR: v,
+                             DataSourceColumns.CATEGORY: "IT",
+                             DataSourceColumns.SAVING_PERCENT: sp,
+                             DataSourceColumns.SPEND: spend,
+                             DataSourceColumns.PURCHASE_ORDERS_NUMBER: f"PO-{v}-{i}"})
+
         df = pd.DataFrame(rows)
         result = self.scorer.score(df, run_id=1)
         best = next(s.performance_band for s in result if s.canonical_vendor_name == "BEST")

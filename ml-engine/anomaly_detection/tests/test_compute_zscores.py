@@ -35,9 +35,20 @@ def test_compute_zscores_groupwise_when_group_size_at_least_three():
     z = detector._compute_zscores(df, spend_gap)
 
     expected = pd.Series(0.0, index=df.index)
-    for _, group in df.groupby([DataSourceColumns.CANONICAL_VENDOR, DataSourceColumns.CATEGORY], group_keys=False):
+    for (vendor, category), group in df.groupby(
+        [DataSourceColumns.CANONICAL_VENDOR, DataSourceColumns.CATEGORY],
+        group_keys=False,
+    ):
         grp_gap = spend_gap.loc[group.index]
-        expected.loc[group.index] = (grp_gap - grp_gap.mean()) / grp_gap.std()
+        grp_z = (grp_gap - grp_gap.mean()) / grp_gap.std()
+
+        # Print group info and z-scores for debugging.
+        print(
+            f"vendor: {vendor}; category: {category}; "
+            f"indices: {group.index.tolist()}; z_scores: {grp_z.round(6).tolist()}"
+        )
+
+        expected.loc[group.index] = grp_z
 
     assert np.allclose(z.values, expected.values, atol=1e-12)
 

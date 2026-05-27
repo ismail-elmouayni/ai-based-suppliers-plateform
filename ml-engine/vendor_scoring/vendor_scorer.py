@@ -61,7 +61,7 @@ class VendorScorer:
             logger.warning("No scoreable rows after filtering NULL categories.")
             return []
 
-        aggregatedRawData = (
+        aggregated_raw_data = (
                 data_frame.groupby([DataSourceColumns.CANONICAL_VENDOR, DataSourceColumns.CATEGORY])
                           .agg(**{  
                                     VendorScore.RAW_AVERAGE_SAVING_PERCENT: (DataSourceColumns.SAVING_PERCENT, "mean"),
@@ -72,17 +72,17 @@ class VendorScorer:
 
         # cross categories vendor total spend
         vendor_total_spend = data_frame.groupby(DataSourceColumns.CANONICAL_VENDOR)[DataSourceColumns.SPEND].sum().rename("vendor_total_spend")
-        aggregatedRawData = aggregatedRawData.join(vendor_total_spend, on=DataSourceColumns.CANONICAL_VENDOR)
+        aggregated_raw_data = aggregated_raw_data.join(vendor_total_spend, on=DataSourceColumns.CANONICAL_VENDOR)
         
-        aggregatedRawData[VendorScore.RAW_SPECIALIZATION] = (
-            aggregatedRawData[VendorScore.RAW_TOTAL_SPEND] / aggregatedRawData["vendor_total_spend"].replace(0, np.nan)
+        aggregated_raw_data[VendorScore.RAW_SPECIALIZATION] = (
+            aggregated_raw_data[VendorScore.RAW_TOTAL_SPEND] / aggregated_raw_data["vendor_total_spend"].replace(0, np.nan)
         ).fillna(0.0)
 
-        aggregatedRawData[VendorScore.RAW_AVERAGE_SAVING_PERCENT] = aggregatedRawData[VendorScore.RAW_AVERAGE_SAVING_PERCENT].fillna(0.0)
+        aggregated_raw_data[VendorScore.RAW_AVERAGE_SAVING_PERCENT] = aggregated_raw_data[VendorScore.RAW_AVERAGE_SAVING_PERCENT].fillna(0.0)
 
         # --- Scoreable subset -----------------------------------------
-        valid_vendors                   = aggregatedRawData[aggregatedRawData[VendorScore.RAW_PURCHASE_COUNT] >= self.min_purchase_count].copy()
-        vendors_with_insufficient_po    = aggregatedRawData[aggregatedRawData[VendorScore.RAW_PURCHASE_COUNT] < self.min_purchase_count].copy()
+        valid_vendors                   = aggregated_raw_data[aggregated_raw_data[VendorScore.RAW_PURCHASE_COUNT] >= self.min_purchase_count].copy()
+        vendors_with_insufficient_po    = aggregated_raw_data[aggregated_raw_data[VendorScore.RAW_PURCHASE_COUNT] < self.min_purchase_count].copy()
 
         rows: list[VendorScore] = []
 
@@ -106,7 +106,8 @@ class VendorScorer:
         )
         return rows
     
-    def _add_normalized_columns(self, df: pd.DataFrame) -> pd.DataFrame:
+    @staticmethod
+    def _add_normalized_columns(df: pd.DataFrame) -> pd.DataFrame:
         """Add normalized signal columns to *df* for debugging/inspection."""
         df = df.copy()
         df[VendorScore.SAVING_PERCENT_NORM]  = normalize(df[VendorScore.RAW_AVERAGE_SAVING_PERCENT])
