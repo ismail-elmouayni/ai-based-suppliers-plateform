@@ -29,7 +29,7 @@ from data_source_columns import DataSourceColumns
 logger = logging.getLogger(__name__)
 
 # the minimal number of cluster to make kMeans method useful.
-kmean_min_cluster_size: int = 10
+k_mean_min_cluster_size: int = 10
 
 class VendorClusterer:
     def __init__(self, cfg: ConsolidationConfig) -> None:
@@ -43,10 +43,11 @@ class VendorClusterer:
     # Elbow method
     # ------------------------------------------------------------------
 
-    def _auto_k(self, scaled_matrix: np.ndarray) -> int:
+    @staticmethod
+    def _auto_k(scaled_matrix: np.ndarray) -> int:
         """Pick k using the elbow method (inertia reduction < 15%)."""
 
-        max_clusters = min(kmean_min_cluster_size, len(scaled_matrix) - 1)
+        max_clusters = min(k_mean_min_cluster_size, len(scaled_matrix) - 1)
         if max_clusters < 2:
             return max(1, len(scaled_matrix))
 
@@ -74,13 +75,14 @@ class VendorClusterer:
     # Clustering
     # ------------------------------------------------------------------
 
-    def _cluster_kmeans(self, X_scaled: np.ndarray, n_clusters: int) -> np.ndarray:
+    @staticmethod
+    def _cluster_kmeans(x_scaled: np.ndarray, n_clusters: int) -> np.ndarray:
         km = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
-        return km.fit_predict(X_scaled)
+        return km.fit_predict(x_scaled)
 
-    def _cluster_dbscan(self, X_scaled: np.ndarray) -> np.ndarray:
+    def _cluster_dbscan(self, x_scaled: np.ndarray) -> np.ndarray:
         db = DBSCAN(eps=self.dbscan_eps, min_samples=self.dbscan_min_samples)
-        return db.fit_predict(X_scaled)
+        return db.fit_predict(x_scaled)
 
     # ------------------------------------------------------------------
     # Public API
@@ -112,23 +114,23 @@ class VendorClusterer:
         )
         vendors = pivot.index.tolist()
         categories = pivot.columns.tolist()
-        X = pivot.values.astype(float)
+        x = pivot.values.astype(float)
 
         # Scale
         scaler = StandardScaler()
-        X_scaled = scaler.fit_transform(X)
+        x_scaled = scaler.fit_transform(x)
 
         # Cluster
         if self.algorithm == "dbscan":
-            labels = self._cluster_dbscan(X_scaled)
+            labels = self._cluster_dbscan(x_scaled)
         else:
             n_k = (
-                self._auto_k(X_scaled)
+                self._auto_k(x_scaled)
                 if str(self.n_clusters).lower() == "auto"
                 else int(self.n_clusters)
             )
             n_k = min(n_k, len(vendors))
-            labels = self._cluster_kmeans(X_scaled, n_k)
+            labels = self._cluster_kmeans(x_scaled, n_k)
 
         # Vendor-level info
         vendor_total_spend = (
@@ -158,7 +160,7 @@ class VendorClusterer:
                 continue
 
             # Cluster spend profile
-            cluster_X = X[mask]  # shape: (n_vendors, n_categories)
+            cluster_X = x[mask]  # shape: (n_vendors, n_categories)
             mean_spend_per_cat = cluster_X.mean(axis=0)
             dominant_cat_idx = int(np.argmax(mean_spend_per_cat))
             dominant_cat = categories[dominant_cat_idx]

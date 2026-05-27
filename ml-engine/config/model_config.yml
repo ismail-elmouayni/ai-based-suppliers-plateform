@@ -51,7 +51,8 @@ consolidation:
   min_cluster_size: 2
 
   # Clustering algorithm: 'kmeans' or 'dbscan'
-  algorithm: kmeans
+  #algorithm: kmeans
+  algorithm: dbscan
 
   # Number of clusters. 'auto' uses the elbow method (tries k = 2..10).
   # Set a specific integer (e.g. 5) to override automatic selection.
